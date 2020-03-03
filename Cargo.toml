@@ -1,0 +1,25 @@
+[package]
+name = "racemus"
+version = "0.0.1"
+authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
+edition = "2018"
+
+[dependencies]
+tokio = { version = "0.2", features = ["full", "fs"] }
+nom = "5.1"
+log = "0.4"
+pretty_env_logger = "0.4"
+circular = { git = "https://github.com/sozu-proxy/circular" }
+ring = "0.16"
+untrusted = { version = "0.7.0" }
+num = "0.2"
+rand = "0.7"
+hyper = "0.13"
+http = "0.2"
+url = "2.1"
+hyper-tls = "0.4"
+serde_json = "1.0"
+aes = "0.3"
+cfb8 = "0.3"
+stream-cipher = "0.3"
+futures = "0.3"
