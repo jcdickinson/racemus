@@ -1,14 +1,12 @@
 use crate::crypto::insecure::InsecurePrivateKey;
 use crate::mojang;
-use crate::protocol::packet::*;
-use crate::protocol::writers::AesCfb8;
-use circular::Buffer;
+use crate::protocol::*;
 use log::{error, info, trace};
 use rand::{self, RngCore};
 use std::error::Error;
 use std::net::SocketAddr;
-use stream_cipher::{NewStreamCipher, StreamCipher};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
+use stream_cipher::{NewStreamCipher};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 #[derive(Debug)]
 pub enum ConnectionError {
@@ -34,15 +32,12 @@ impl std::fmt::Display for ConnectionError {
 pub struct Connection<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>
 {
     key: Box<InsecurePrivateKey>,
-    read_buffer: Buffer,
     state: ConnectionState,
     addr: SocketAddr,
     player_name: Option<String>,
     verify: Option<Vec<u8>>,
-    aes_in: Box<Option<AesCfb8>>,
-    aes_out: Box<Option<AesCfb8>>,
-    reader: R,
-    writer: W,
+    reader: PacketReader<R>,
+    writer: PacketWriter<W>,
 }
 
 impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>
@@ -66,72 +61,18 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
     }
 }
 
-macro_rules! read_packet {
-    ($self:expr, $method:path, $type:ty { $($pat:pat => $handler:expr),* }) => {{
-        let mut consume = 0;
-        let result: Result<_, Box<dyn Error>> = loop {
-            match $self.reader.read($self.read_buffer.space()).await {
-                Ok(n) => {
-                    if n == 0 {
-                        break Err(Box::new(std::io::Error::from(std::io::ErrorKind::NotConnected)));
-                    }
-
-                    if let Some(aes) = &mut *$self.aes_in {
-                        aes.decrypt(&mut $self.read_buffer.space()[0..n]);
-                    }
-
-                    $self.read_buffer.fill(n);
-                    let len = $self.read_buffer.available_data();
-                    let consume = match $method($self.read_buffer.data()) {
-                        Ok((remainder, packet)) => {
-                            match packet {
-                                $(
-                                    $pat => {
-                                        consume = len - remainder.len();
-                                        break $handler;
-                                    }
-                                ),*
-                            }
-                        },
-                        Err(nom::Err::Incomplete(nom::Needed::Size(sz))) => sz,
-                        Err(nom::Err::Incomplete(nom::Needed::Unknown)) => 4096,
-                        Err(nom::Err::Error(error)) => break Err(error.into()),
-                        Err(nom::Err::Failure(error)) => break Err(error.into()),
-                    };
-
-                    $self.read_buffer.consume(consume);
-                }
-                Err(error) => break Err(Box::new(error)),
-            }
-        };
-        $self.read_buffer.consume(consume);
-        result
-    }};
-}
-
 impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>
     Connection<R, W>
 {
     pub fn new(reader: R, writer: W, addr: SocketAddr, key: InsecurePrivateKey) -> Self {
-        Self::with_buffer(reader, writer, addr, key, Buffer::with_capacity(4096))
-    }
-
-    pub fn with_buffer(
-        reader: R,
-        writer: W,
-        addr: SocketAddr,
-        key: InsecurePrivateKey,
-        read_buffer: Buffer,
-    ) -> Self {
+        let writer = PacketWriter::new(writer);
+        let reader = PacketReader::new(reader);
         Self {
-            read_buffer,
             addr,
             state: ConnectionState::Open,
             key: Box::new(key),
             player_name: None,
             verify: None,
-            aes_in: Box::new(None),
-            aes_out: Box::new(None),
             reader,
             writer,
         }
@@ -149,39 +90,33 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
                     ConnectionState::RunningGame => Err(ConnectionError::NotImplemented.into()),
                 };
 
-                match result {
-                    Ok(_) => trace!("{} disconnected", self),
-                    Err(error) => {
-                        error!("{} client encountered an error: {}", self, error);
-                        let error = format!("{:?}", error);
-                        break error;
-                    }
+                if let Err(error) = result {
+                    error!("{} client encountered an error: {}", self, error);
+                    let error = format!("{:?}", error);
+                    break error;
                 };
             };
 
+            info!("{} disconnecting", self);
             self.disconnect_client(e).await;
         });
     }
 
-    async fn disconnect_client<'a>(&'a mut self, reason: String) {
+    async fn disconnect_client(&mut self, reason: String) {
         if let Ok(chat) = crate::chat::trivial(&reason) {
             let _ = match self.state {
                 ConnectionState::RunningGame => {
-                    crate::protocol::packet::Disconnect::play(&chat)
-                        .write(&mut self.writer, (*self.aes_out).as_mut())
-                        .await
+                    write_disconnect_play(&mut self.writer, &chat).await
                 }
                 _ => {
-                    crate::protocol::packet::Disconnect::play(&chat)
-                        .write(&mut self.writer, (*self.aes_out).as_mut())
-                        .await
+                    write_disconnect_login(&mut self.writer, &chat).await
                 }
             };
         }
     }
 
-    async fn execute_open<'a>(&'a mut self) -> Result<(), Box<dyn Error>> {
-        read_packet!(self, open::take_packet, open::Packet<'a> {
+    async fn execute_open(&mut self) -> Result<(), Box<dyn Error>> {
+        match open::read_packet(&mut self.reader).await? {
             open::Packet::Handshake(handshake) => match handshake.next_state() {
                 open::RequestedState::Login => {
                     trace!("{} request to transition to login state", self);
@@ -192,16 +127,16 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
                     Err(ConnectionError::NotImplemented.into())
                 }
             }
-        })
+        }
     }
 
-    async fn execute_login<'a>(&'a mut self) -> Result<(), Box<dyn Error>> {
-        read_packet!(self, login::take_packet, login::Packet<'a> {
+    async fn execute_login(&mut self) -> Result<(), Box<dyn Error>> {
+        match login::read_packet(&mut self.reader).await? {
             login::Packet::LoginStart(login) => {
                 trace!("{} request to login as: {}", self, login.player_name());
                 let mut verify = vec![0u8; 16];
                 rand::thread_rng().fill_bytes(&mut verify);
-                login::EncryptionRequest::new(self.key.public_der(), &verify).write(&mut self.writer, (*self.aes_out).as_mut()).await?;
+                login::write_encryption_request(&mut self.writer, self.key.public_der(), &verify).await?;
                 self.player_name = Some(login.player_name().to_string());
                 self.verify = Some(verify);
                 self.state = ConnectionState::AwaitingEncryptionResponse;
@@ -211,11 +146,11 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
             _ => {
                 Err(ConnectionError::InvalidTransition.into())
             }
-        })
+        }
     }
 
-    async fn execute_encryption_response<'a>(&'a mut self) -> Result<(), Box<dyn Error>> {
-        read_packet!(self, login::take_packet, login::Packet<'a> {
+    async fn execute_encryption_response(&mut self) -> Result<(), Box<dyn Error>> {
+        match login::read_packet(&mut self.reader).await? {
             login::Packet::EncryptionResponse(enc) => {
                 trace!("{} encryption response received", self);
                 let player_name = if let Some(player_name) = &self.player_name {
@@ -265,18 +200,21 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
                     Ok(r) => r,
                     Err(_) => return Err(ConnectionError::InvalidKey.into())
                 };
-                self.aes_in = Box::new(Some(aes_in));
-                self.aes_out = Box::new(Some(aes_out));
-                login::LoginSuccess::new(&player_info.uuid(), &player_info.player_name()).write(&mut self.writer, (*self.aes_out).as_mut()).await?;
+
+                self.writer.encrypt(aes_out);
+                self.reader.decrypt(aes_in);
+                
+                login::write_login_success(&mut self.writer, &player_info.uuid(), &player_info.player_name()).await?;
 
                 info!("{} player {} connected with uuid {}", self, player_info.player_name(), player_info.uuid());
 
-                Err(ConnectionError::NotImplemented.into())
+                self.state = ConnectionState::RunningGame;
+                Ok(())
             },
             _ => {
                 Err(ConnectionError::InvalidTransition.into())
             }
-        })
+        }
     }
 }
 

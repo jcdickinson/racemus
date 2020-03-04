@@ -17,11 +17,13 @@ const ENV_ENDPOINT: &str = "RACEMUS_ENDPOINT";
 const ENV_PRIVATE: &str = "RACEMUS_PRIVATE_KEY";
 const ENV_PUBLIC: &str = "RACEMUS_PUBLIC_KEY";
 const DEFAULT_LISTEN: &str = "0.0.0.0:25565";
+const DEFAULT_PRIVATE: &str = "server_rsa";
+const DEFAULT_PUBLIC: &str = "server_rsa.pub";
 
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init_custom_env(ENV_LOG);
-    let addr = env::var(ENV_ENDPOINT).unwrap_or(DEFAULT_LISTEN.to_string());
+    let addr = env::var(ENV_ENDPOINT).unwrap_or_else(|_| DEFAULT_LISTEN.to_string());
 
     let keys = match read_keys().await {
         Ok(r) => r,
@@ -59,8 +61,8 @@ async fn main() {
 }
 
 async fn read_keys() -> Result<crypto::insecure::InsecurePrivateKey, ()> {
-    let private_key_path = env::var(ENV_PRIVATE).unwrap_or("server_rsa".to_string());
-    let public_key_path = env::var(ENV_PUBLIC).unwrap_or("server_rsa.pub".to_string());
+    let private_key_path = env::var(ENV_PRIVATE).unwrap_or_else(|_| DEFAULT_PRIVATE.to_string());
+    let public_key_path = env::var(ENV_PUBLIC).unwrap_or_else(|_| DEFAULT_PUBLIC.to_string());
 
     let private_key = match read_file(&private_key_path).await {
         Ok(r) => r,
