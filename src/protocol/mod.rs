@@ -1,5 +1,6 @@
 pub mod login;
 pub mod open;
+pub mod status;
 
 use aes::Aes128;
 use cfb8::stream_cipher::{ StreamCipher, NewStreamCipher };
@@ -9,6 +10,9 @@ use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+pub const SERVER_VERSION: &str = "1.15.2";
+pub const SERVER_VERSION_NUMBER: i32 = 578;
+
 pub type AesCfb8 = Cfb8<Aes128>;
 
 pub struct PacketWriter<W: AsyncWrite + Unpin> {
@@ -16,6 +20,40 @@ pub struct PacketWriter<W: AsyncWrite + Unpin> {
     writer: W,
     encrypted: bool,
     crypt: AesCfb8,
+}
+
+macro_rules! build_write_varint {
+    ($name:ident, $type:ty) => {
+        pub fn $name(&mut self, val: $type) -> &mut Self {
+            let mut val = val as u64;
+            loop {
+                let b = (val & 0b0111_1111) as u8;
+                val >>= 7;
+    
+                if val == 0 {
+                    self.target.push(b);
+                    break;
+                } else {
+                    self.target.push(b | 0b1000_0000);
+                }
+            }
+            self
+        }
+    };
+}
+macro_rules! build_write_fixint {
+    ($name:ident, $type:ty) => {
+        pub fn $name(&mut self, val: $type) -> &mut Self {
+            const SIZE: usize = std::mem::size_of::<$type>();
+            let val = val as u64;
+            for i in (0..SIZE).rev() {
+                let v = (val >> (i * 8)) & 0b1111_1111;
+                self.target.push(v as u8);
+                println!("{:?}", v);
+            }
+            self
+        }
+    };
 }
 
 impl<W: AsyncWrite + Unpin> PacketWriter<W> {
@@ -39,21 +77,10 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
         self
     }
 
-    pub fn var_i32(&mut self, val: i32) -> &mut Self {
-        let mut val = val as u32;
-        loop {
-            let b = (val & 0b0111_1111) as u8;
-            val >>= 7;
-
-            if val == 0 {
-                self.target.push(b);
-                break;
-            } else {
-                self.target.push(b | 0b1000_0000);
-            }
-        }
-        self
-    }
+    build_write_varint!(var_i32, i32);
+    build_write_fixint!(fix_u8, u8);
+    build_write_fixint!(fix_i32, i32);
+    build_write_fixint!(fix_u64, u64);
 
     pub fn arr_u8(&mut self, val: &[u8]) -> &mut Self {
         self.var_i32(val.len() as i32);
@@ -61,8 +88,10 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
         self
     }
     pub fn arr_char(&mut self, val: &str) -> &mut Self {
-        self.arr_u8(val.as_bytes());
-        self
+        self.arr_u8(val.as_bytes())
+    }
+    pub fn fix_bool(&mut self, val: bool) -> &mut Self {
+        self.fix_u8(if val { 0x01 } else { 0x00 })
     }
 
     pub async fn flush(&mut self) -> Result<(), std::io::Error> {
@@ -109,15 +138,15 @@ pub struct PacketReader<R: AsyncRead + Unpin> {
     encrypted: bool,
     crypt: AesCfb8,
 }
-macro_rules! build_varint {
+macro_rules! build_read_varint {
     ($name:ident, $type:ty) => {
         pub async fn $name(&mut self) -> Result<$type, Error> {
             const SIZE: usize = std::mem::size_of::<$type>() * 8;
-            let mut res: usize = 0;
+            let mut res: u64 = 0;
             let mut shift: usize = 0;
             loop {
                 let byte = self.fix_u8().await?;
-                res |= ((byte as usize) & 0b0111_1111usize) << shift;
+                res |= ((byte as u64) & 0b0111_1111) << shift;
                 if (byte & 0b1000_0000) == 0 {
                     return Ok(res as i32);
                 }
@@ -129,7 +158,7 @@ macro_rules! build_varint {
         }
     };
 }
-macro_rules! build_fixint {
+macro_rules! build_read_fixint {
     ($name:ident, $type:ty) => {
         pub async fn $name(&mut self) -> Result<$type, Error> {
             const SIZE: usize = std::mem::size_of::<$type>();
@@ -139,10 +168,10 @@ macro_rules! build_fixint {
             if self.buffer.available_data() < SIZE {
                 self.fill(SIZE).await?
             }
-            let mut result = 0usize;
+            let mut result = 0u64;
             for b in &self.buffer.data()[0..SIZE] {
                 result <<= 8;
-                result |= *b as usize;
+                result |= *b as u64;
             }
             self.current_len -= SIZE;
             self.buffer.consume(SIZE);
@@ -192,7 +221,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
     async fn fill(&mut self, size: usize) -> Result<(), std::io::Error> {
         if size > self.buffer.available_space() {
             let size = size - self.buffer.available_data();
-
+            
             // Size it to BUFFER_GROW increments
             let size = (size + Self::BUFFER_GROW - 1) / Self::BUFFER_GROW;
             let size = size * Self::BUFFER_GROW;
@@ -213,9 +242,10 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
         Ok(())
     }
 
-    build_fixint!(fix_u8, u8);
-    build_fixint!(fix_u16, u16);
-    build_varint!(var_i32, i32);
+    build_read_fixint!(fix_u8, u8);
+    build_read_fixint!(fix_u16, u16);
+    build_read_fixint!(fix_u64, u64);
+    build_read_varint!(var_i32, i32);
     
     async fn length_prefix(&mut self) -> Result<usize, Error> {
         let len = self.var_i32().await?;
@@ -387,6 +417,9 @@ mod tests {
     raw_write_tests! {
         packet_writer_packet_id: w => w.packet_id(50), b"\x01\x32",
         packet_writer_var_i32: w => w.packet_id(50).var_i32(453), b"\x03\x32\xc5\x03",
+        packet_writer_fix_u8: w => w.packet_id(50).fix_u8(0x15), b"\x02\x32\x15",
+        packet_writer_fix_i32: w => w.packet_id(50).fix_i32(0x1526_3748), b"\x05\x32\x15\x26\x37\x48",
+        packet_writer_fix_u64: w => w.packet_id(50).fix_u64(0x1526_3748_5960_7182), b"\x09\x32\x15\x26\x37\x48\x59\x60\x71\x82",
         packet_writer_var_buffer: w => w
             .packet_id(50)
             .arr_u8(b"1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" as &[u8]),
@@ -429,6 +462,9 @@ mod tests {
         },
         read_fix_u16, b"\x10\x20": r => {
             r.fix_u16(), 0x1020u16
+        },
+        read_fix_u64, b"\x10\x20\x30\x40\x50\x60\x70\x80": r => {
+            r.fix_u64(), 0x1020_3040_5060_7080
         },
         read_arr_char, b"\x1bFoo \xC2\xA9 bar \xF0\x9D\x8C\x86 baz \xE2\x98\x83 qux": r => {
             r.arr_char(None), "Foo © bar 𝌆 baz ☃ qux"

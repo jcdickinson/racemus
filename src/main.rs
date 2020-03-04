@@ -5,6 +5,7 @@ pub mod connection;
 pub mod crypto;
 pub mod mojang;
 pub mod protocol;
+pub mod sim;
 
 use connection::Connection;
 use log::{error, info, warn};
@@ -40,6 +41,9 @@ async fn main() {
             return;
         }
     };
+    let simulation = sim::Simulation::new(10);
+    let simulation = simulation.execute();
+
     loop {
         match listener.accept().await {
             Ok((socket, cli)) => {
@@ -49,7 +53,8 @@ async fn main() {
                 }
 
                 let (read, write) = tokio::io::split(socket);
-                let connection = Connection::new(read, write, cli, keys.clone());
+                let send = simulation.clone();
+                let connection = Connection::new(read, write, send, cli, keys.clone());
                 connection.execute();
             }
             Err(error) => {

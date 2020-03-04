@@ -5,9 +5,10 @@ Racemus is an experimental Minecraft server.
 # Tasks
 
 - [x] Login Sequence
-- [ ] Tests for login sequence
-- [ ] Start simulation
-- [ ] Investigate rust generators to replace nom
+- [x] Tests for login sequence 50%
+- [x] Start simulation
+- [x] Server status - basic
+- [ ] 1 chunk flatland
 
 # Getting Started
 
