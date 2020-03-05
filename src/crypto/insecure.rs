@@ -42,15 +42,15 @@ impl InsecurePrivateKey {
         while exp > Zero::zero() {
             // Accumulate current base if current exponent bit is 1
             if (&exp & 1.to_biguint().unwrap()) == One::one() {
-                result = result * &b;
-                result = result % modulus;
+                result *= &b;
+                result %= modulus;
             }
             // Get next base by squaring
             b = &b * &b;
             b = &b % modulus;
 
             // Get next bit of exponent
-            exp = exp >> 1;
+            exp >>= 1;
         }
         result
     }

@@ -37,10 +37,10 @@ pub fn hash(server_id: &[u8], shared_secret: &[u8], public_key_der: &[u8]) -> St
     let twos = if negative {
         let mut carry = true;
         for i in (0..hash.len()).rev() {
-            copy[i] = !hash[i] & 0xff;
+            copy[i] = !hash[i];
             if carry {
                 carry = copy[i] == 0xff;
-                copy[i] = copy[i] + 1;
+                copy[i] += 1;
             }
         }
         copy
@@ -52,26 +52,26 @@ pub fn hash(server_id: &[u8], shared_secret: &[u8], public_key_der: &[u8]) -> St
 
     let mut nonzero = false;
     let mut j = 1;
-    for i in 0..twos.len() {
-        let c = twos[i] >> 4;
+    for c in twos {
+        let c = *c;
         nonzero |= c != 0;
         if nonzero {
             result[j] = to_hex(c);
-            j = j + 1;
+            j += 1;
         }
 
-        let c = twos[i] & 0b1111;
+        let c = c & 0b1111;
         nonzero |= c != 0;
         if nonzero {
             result[j] = to_hex(c);
-            j = j + 1;
+            j += 1;
         }
     }
 
     if negative {
-        result[0..j].into_iter().collect()
+        result[0..j].iter().collect()
     } else {
-        result[1..j].into_iter().collect()
+        result[1..j].iter().collect()
     }
 }
 

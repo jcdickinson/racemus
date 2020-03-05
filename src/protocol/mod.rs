@@ -3,7 +3,7 @@ pub mod open;
 pub mod status;
 
 use aes::Aes128;
-use cfb8::stream_cipher::{ StreamCipher, NewStreamCipher };
+use cfb8::stream_cipher::StreamCipher;
 use cfb8::Cfb8;
 use circular::Buffer;
 use std::io::{Error, ErrorKind};
@@ -18,8 +18,7 @@ pub type AesCfb8 = Cfb8<Aes128>;
 pub struct PacketWriter<W: AsyncWrite + Unpin> {
     target: Vec<u8>,
     writer: W,
-    encrypted: bool,
-    crypt: AesCfb8,
+    cipher: Option<AesCfb8>
 }
 
 macro_rules! build_write_varint {
@@ -49,7 +48,6 @@ macro_rules! build_write_fixint {
             for i in (0..SIZE).rev() {
                 let v = (val >> (i * 8)) & 0b1111_1111;
                 self.target.push(v as u8);
-                println!("{:?}", v);
             }
             self
         }
@@ -61,14 +59,12 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
         Self {
             target: Vec::new(),
             writer,
-            encrypted: false,
-            crypt: AesCfb8::new_var(b"0000000000000000" as &[u8], b"0000000000000000" as &[u8]).unwrap()
+            cipher: None
         }
     }
 
     pub fn encrypt(&mut self, crypt: AesCfb8) -> &mut Self {
-        self.encrypted = true;
-        self.crypt = crypt;
+        self.cipher = Some(crypt);
         self
     }
 
@@ -98,9 +94,9 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
         let index = self.target.len();
         self.var_i32(index as i32);
 
-        if self.encrypted {
-            self.crypt.encrypt(&mut self.target[index..]);
-            self.crypt.encrypt(&mut self.target[..index]);
+        if let Some(cipher) = self.cipher.as_mut() {
+            cipher.encrypt(&mut self.target[index..]);
+            cipher.encrypt(&mut self.target[..index]);
         };
         
         self.writer.write_all(&self.target[index..]).await?;
@@ -135,8 +131,7 @@ pub struct PacketReader<R: AsyncRead + Unpin> {
     buffer: Buffer,
     current_len: usize,
     reader: R,
-    encrypted: bool,
-    crypt: AesCfb8,
+    cipher: Option<AesCfb8>
 }
 macro_rules! build_read_varint {
     ($name:ident, $type:ty) => {
@@ -194,8 +189,7 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
             buffer: Buffer::with_capacity(Self::BUFFER_INIT),
             current_len: 0,
             reader,
-            encrypted: false,
-            crypt: AesCfb8::new_var(b"0000000000000000" as &[u8], b"0000000000000000" as &[u8]).unwrap()
+            cipher: None
         }
     }
 
@@ -205,16 +199,14 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
             buffer: Buffer::with_capacity(Self::BUFFER_INIT),
             current_len,
             reader,
-            encrypted: false,
-            crypt: AesCfb8::new_var(b"0000000000000000" as &[u8], b"0000000000000000" as &[u8]).unwrap()
+            cipher: None
         }
     }
 
-    pub fn decrypt(&mut self, crypt: AesCfb8) -> &mut Self {
+    pub fn decrypt(&mut self, cipher: AesCfb8) -> &mut Self {
         // We don't need to decrypt the data retroactively because the
         // encryption negotiation is lock-step.
-        self.encrypted = true;
-        self.crypt = crypt;
+        self.cipher = Some(cipher);
         self
     }
 
@@ -234,8 +226,8 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
                 return Err(ErrorKind::UnexpectedEof.into());
             }
 
-            if self.encrypted {
-                self.crypt.decrypt(&mut self.buffer.space()[0..n]);
+            if let Some(cipher) = self.cipher.as_mut() {
+                cipher.decrypt(&mut self.buffer.space()[0..n]);
             }
             self.buffer.fill(n);
         }
@@ -328,6 +320,7 @@ mod tests {
     use super::*;
     use futures::executor::block_on;
     use std::io::Cursor;
+    use cfb8::stream_cipher::NewStreamCipher;
 
     macro_rules! sync {
         ($e:expr) => {
