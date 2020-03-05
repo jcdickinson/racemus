@@ -1,14 +1,18 @@
-use crate::crypto::insecure::InsecurePrivateKey;
+mod crypto;
+pub mod messages;
+mod protocol;
+
 use crate::mojang;
-use crate::protocol::*;
 use crate::sim;
+use async_std::io::{Read, Write};
+use async_std::sync::{Receiver, Sender};
+pub use crypto::insecure::InsecurePrivateKey;
 use log::{error, info, trace};
+use protocol::*;
 use rand::{self, RngCore};
 use std::error::Error;
 use std::net::SocketAddr;
 use stream_cipher::NewStreamCipher;
-use async_std::io::{Read, Write};
-use async_std::sync::{ Sender, Receiver };
 
 #[derive(Debug)]
 pub enum ConnectionError {
@@ -18,7 +22,7 @@ pub enum ConnectionError {
     InvalidKey,
     ServerClosing,
     UnsupportedVersion,
-    AuthenticationFailed
+    AuthenticationFailed,
 }
 
 impl Error for ConnectionError {}
@@ -27,7 +31,10 @@ impl std::fmt::Display for ConnectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Self::NotImplemented => write!(f, "This feature is not supported by this server."),
-            Self::InvalidTransition => write!(f, "The Minecraft client attempted to perform an invalid action."),
+            Self::InvalidTransition => write!(
+                f,
+                "The Minecraft client attempted to perform an invalid action."
+            ),
             Self::InvalidVerifier => write!(f, "Authentication failed."),
             Self::InvalidKey => write!(f, "Authentication failed."),
             Self::ServerClosing => write!(f, "The server is shutting down."),
@@ -37,8 +44,7 @@ impl std::fmt::Display for ConnectionError {
     }
 }
 
-pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
-{
+pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> {
     key: Box<InsecurePrivateKey>,
     state: ConnectionState,
     addr: SocketAddr,
@@ -46,12 +52,13 @@ pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send 
     verify: Option<Vec<u8>>,
     reader: PacketReader<R>,
     writer: PacketWriter<W>,
-    recv: Option<Receiver<sim::ClientMessages>>,
-    send: Sender<sim::SimMessages>,
+    recv: Option<Receiver<messages::ClientMessages>>,
+    send: Sender<messages::ServerMessages>,
+    version: Option<i32>,
 }
 
-impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
-    std::fmt::Display for Connection<R, W>
+impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> std::fmt::Display
+    for Connection<R, W>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         let player_name: &str = if let Some(player_name) = &self.player_name {
@@ -62,8 +69,12 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
 
         match &self.state {
             ConnectionState::Open => write!(f, "({}-{} new)", self.addr, player_name),
-            ConnectionState::AwaitingStatusRequest => write!(f, "({}-{} state)", self.addr, player_name),
-            ConnectionState::AwaitingStatusPing => write!(f, "({}-{} ping)", self.addr, player_name),
+            ConnectionState::AwaitingStatusRequest => {
+                write!(f, "({}-{} state)", self.addr, player_name)
+            }
+            ConnectionState::AwaitingStatusPing => {
+                write!(f, "({}-{} ping)", self.addr, player_name)
+            }
             ConnectionState::AwaitingLogin => write!(f, "({}-{} login)", self.addr, player_name),
             ConnectionState::AwaitingEncryptionResponse => {
                 write!(f, "({}-{} encrypt)", self.addr, player_name)
@@ -73,13 +84,11 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
     }
 }
 
-impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
-    Connection<R, W>
-{
+impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connection<R, W> {
     pub fn new(
         reader: R,
         writer: W,
-        send: Sender<sim::SimMessages>,
+        send: Sender<messages::ServerMessages>,
         addr: SocketAddr,
         key: InsecurePrivateKey,
     ) -> Self {
@@ -95,6 +104,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
             player_name: None,
             verify: None,
             recv: None,
+            version: None,
         }
     }
 
@@ -125,7 +135,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
     }
 
     async fn disconnect_client(&mut self, reason: String) {
-        if let Ok(chat) = crate::chat::trivial(&reason) {
+        if let Ok(chat) = crate::mojang::chat::trivial(&reason) {
             let _ = match self.state {
                 ConnectionState::RunningGame => {
                     write_disconnect_play(&mut self.writer, &chat).await
@@ -140,6 +150,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
             open::Packet::Handshake(handshake) => match handshake.next_state() {
                 open::RequestedState::Login => {
                     trace!("{} request to transition to login state", self);
+                    self.version = Some(handshake.version());
                     self.state = ConnectionState::AwaitingLogin;
                     Ok(())
                 }
@@ -151,7 +162,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
             },
         }
     }
-    
     async fn execute_status_request(&mut self) -> Result<(), Box<dyn Error>> {
         match status::read_packet(&mut self.reader).await? {
             status::Packet::Request => {
@@ -164,7 +174,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
             _ => Err(ConnectionError::InvalidTransition.into()),
         }
     }
-    
     async fn execute_status_ping(&mut self) -> Result<(), Box<dyn Error>> {
         match status::read_packet(&mut self.reader).await? {
             status::Packet::Ping(ping) => {
@@ -181,6 +190,11 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
         match login::read_packet(&mut self.reader).await? {
             login::Packet::LoginStart(login) => {
                 trace!("{} request to login as: {}", self, login.player_name());
+                match self.version {
+                    Some(protocol::SERVER_VERSION_NUMBER) => {}
+                    Some(_) => return Err(ConnectionError::UnsupportedVersion.into()),
+                    None => return Err(ConnectionError::InvalidTransition.into()),
+                };
                 let mut verify = vec![0u8; 16];
                 rand::thread_rng().fill_bytes(&mut verify);
                 login::write_encryption_request(&mut self.writer, self.key.public_der(), &verify)
@@ -224,7 +238,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
                 let padding = incoming_verify.len() - verify.len();
                 let incoming_verify = &incoming_verify[padding..];
 
-                if !crate::crypto::equals_constant_time(verify, incoming_verify) {
+                if !crypto::equals_constant_time(verify, incoming_verify) {
                     return Err(ConnectionError::InvalidVerifier.into());
                 }
 
@@ -235,10 +249,11 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
 
                 trace!("{} key decrypted", self);
                 let server_hash = mojang::hash(b"" as &[u8], &key, self.key.public_der());
-                let player_info = match mojang::api::player_join_session(&player_name, &server_hash).await {
-                    Ok(r) => r,
-                    Err(_) => return Err(ConnectionError::AuthenticationFailed.into())
-                };
+                let player_info =
+                    match mojang::api::player_join_session(&player_name, &server_hash).await {
+                        Ok(r) => r,
+                        Err(_) => return Err(ConnectionError::AuthenticationFailed.into()),
+                    };
                 trace!(
                     "{} player info retrieved for {} with uuid {}",
                     self,
@@ -292,12 +307,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
             Some(m) => m,
         };
 
-        match message {
-            sim::ClientMessages::JoinGame(j) => {
-                j.write(&mut self.writer).await?;
-            }
-        }
-
+        message.write(&mut self.writer).await?;
         Ok(())
     }
 }

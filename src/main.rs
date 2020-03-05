@@ -1,17 +1,14 @@
 #![warn(rust_2018_idioms)]
 
-pub mod chat;
 pub mod connection;
-pub mod crypto;
 pub mod mojang;
-pub mod protocol;
 pub mod sim;
 
+use async_std::net::TcpListener;
+use async_std::prelude::*;
 use connection::Connection;
 use log::{error, info, warn};
 use std::env;
-use async_std::net::TcpListener;
-use async_std::prelude::*;
 
 const ENV_LOG: &str = "RACEMUS_LOG";
 const ENV_ENDPOINT: &str = "RACEMUS_ENDPOINT";
@@ -64,7 +61,7 @@ async fn main() {
     }
 }
 
-async fn read_keys() -> Result<crypto::insecure::InsecurePrivateKey, ()> {
+async fn read_keys() -> Result<connection::InsecurePrivateKey, ()> {
     let private_key_path = env::var(ENV_PRIVATE).unwrap_or_else(|_| DEFAULT_PRIVATE.to_string());
     let public_key_path = env::var(ENV_PUBLIC).unwrap_or_else(|_| DEFAULT_PUBLIC.to_string());
 
@@ -82,7 +79,7 @@ async fn read_keys() -> Result<crypto::insecure::InsecurePrivateKey, ()> {
             return Err(());
         }
     };
-    let key = match crypto::insecure::InsecurePrivateKey::from_der(&private_key, &public_key) {
+    let key = match connection::InsecurePrivateKey::from_der(&private_key, &public_key) {
         Ok(r) => r,
         Err(_) => {
             error!("failed to extract private key from: {}", private_key_path);

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod chat;
 
 use ring::digest;
 

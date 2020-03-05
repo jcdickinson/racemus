@@ -3,23 +3,23 @@ pub mod open;
 pub mod status;
 
 use aes::Aes128;
+use async_std::io::{Read, Write};
+use async_std::prelude::*;
 use cfb8::stream_cipher::StreamCipher;
 use cfb8::Cfb8;
 use circular::Buffer;
 use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
-use async_std::io::{Read, Write};
-use async_std::prelude::*;
 
 pub const SERVER_VERSION: &str = "1.15.2";
-pub const SERVER_VERSION_NUMBER: i32 = 578;
+pub const SERVER_VERSION_NUMBER: i32 = 579;
 
 pub type AesCfb8 = Cfb8<Aes128>;
 
 pub struct PacketWriter<W: Write + Unpin> {
     target: Vec<u8>,
     writer: W,
-    cipher: Option<AesCfb8>
+    cipher: Option<AesCfb8>,
 }
 
 macro_rules! build_write_varint {
@@ -29,7 +29,6 @@ macro_rules! build_write_varint {
             loop {
                 let b = (val & 0b0111_1111) as u8;
                 val >>= 7;
-    
                 if val == 0 {
                     self.target.push(b);
                     break;
@@ -60,7 +59,7 @@ impl<W: Write + Unpin> PacketWriter<W> {
         Self {
             target: Vec::new(),
             writer,
-            cipher: None
+            cipher: None,
         }
     }
 
@@ -99,7 +98,6 @@ impl<W: Write + Unpin> PacketWriter<W> {
             cipher.encrypt(&mut self.target[index..]);
             cipher.encrypt(&mut self.target[..index]);
         };
-        
         self.writer.write_all(&self.target[index..]).await?;
         self.writer.write_all(&self.target[..index]).await?;
         self.target.clear();
@@ -132,7 +130,7 @@ pub struct PacketReader<R: Read + Unpin> {
     buffer: Buffer,
     current_len: usize,
     reader: R,
-    cipher: Option<AesCfb8>
+    cipher: Option<AesCfb8>,
 }
 macro_rules! build_read_varint {
     ($name:ident, $type:ty) => {
@@ -190,7 +188,7 @@ impl<R: Read + Unpin> PacketReader<R> {
             buffer: Buffer::with_capacity(Self::BUFFER_INIT),
             current_len: 0,
             reader,
-            cipher: None
+            cipher: None,
         }
     }
 
@@ -200,7 +198,7 @@ impl<R: Read + Unpin> PacketReader<R> {
             buffer: Buffer::with_capacity(Self::BUFFER_INIT),
             current_len,
             reader,
-            cipher: None
+            cipher: None,
         }
     }
 
@@ -214,7 +212,6 @@ impl<R: Read + Unpin> PacketReader<R> {
     async fn fill(&mut self, size: usize) -> Result<(), std::io::Error> {
         if size > self.buffer.available_space() {
             let size = size - self.buffer.available_data();
-            
             // Size it to BUFFER_GROW increments
             let size = (size + Self::BUFFER_GROW - 1) / Self::BUFFER_GROW;
             let size = size * Self::BUFFER_GROW;
@@ -239,7 +236,6 @@ impl<R: Read + Unpin> PacketReader<R> {
     build_read_fixint!(fix_u16, u16);
     build_read_fixint!(fix_u64, u64);
     build_read_varint!(var_i32, i32);
-    
     async fn length_prefix(&mut self) -> Result<usize, Error> {
         let len = self.var_i32().await?;
         if len <= 0 {
@@ -306,21 +302,17 @@ impl<R: Read + Unpin> PacketReader<R> {
                 let s = s.to_string();
                 self.buffer.consume(len);
                 Ok(s)
-            },
-            Err(_) => Err(ErrorKind::InvalidData.into())
+            }
+            Err(_) => Err(ErrorKind::InvalidData.into()),
         }
-    }
-
-    pub fn into_inner(self) -> R {
-        self.reader
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_std::task::block_on;
     use async_std::io::Cursor;
+    use async_std::task::block_on;
     use cfb8::stream_cipher::NewStreamCipher;
 
     macro_rules! sync {
@@ -328,12 +320,11 @@ mod tests {
             block_on($e).unwrap()
         };
     }
-    
     macro_rules! sync_err {
         ($e:expr) => {
             match block_on($e) {
                 Ok(_) => None,
-                Err(e) => Some(e.kind())
+                Err(e) => Some(e.kind()),
             }
         };
     }
@@ -467,7 +458,6 @@ mod tests {
             r.arr_u8(None), b"0123456789" as &[u8]
         }
     }
-    
     raw_read_error_tests! {
         read_arr_char_big, b"\x0a0123456789": r => {
             r.arr_char(Some(3)), Some(ErrorKind::InvalidData)
@@ -485,15 +475,15 @@ mod tests {
         assert_eq!(sync!(reader.packet_header()), 0x01);
         assert_eq!(sync!(reader.packet_header()), 0x02);
     }
-    
     #[test]
     pub fn write_twice() {
         let mut writer = PacketWriter::new(Cursor::new(Vec::new()));
 
-        writer.encrypt(AesCfb8::new_var(b"0234567890123456" as &[u8], b"0234567890123456" as &[u8]).unwrap());
+        writer.encrypt(
+            AesCfb8::new_var(b"0234567890123456" as &[u8], b"0234567890123456" as &[u8]).unwrap(),
+        );
         sync!(writer.packet_id(10).flush());
         sync!(writer.packet_id(10).flush());
-        
         assert_eq!(writer.into_inner().into_inner(), b"\x2f\x57\xb5\x42");
     }
 }

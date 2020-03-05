@@ -20,12 +20,6 @@ impl Handshake {
     pub fn version(&self) -> i32 {
         self.version
     }
-    pub fn addr(&self) -> &str {
-        &self.addr
-    }
-    pub fn port(&self) -> u16 {
-        self.port
-    }
     pub fn next_state(&self) -> RequestedState {
         self.next_state
     }
