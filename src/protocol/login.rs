@@ -3,7 +3,7 @@
 use super::{PacketReader, PacketWriter};
 use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
-use tokio::io::{AsyncRead, AsyncWrite};
+use async_std::io::{Read, Write};
 use crate::sim;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -44,7 +44,7 @@ impl EncryptionResponse {
     }
 }
 
-pub async fn read_packet<R: AsyncRead + Unpin>(
+pub async fn read_packet<R: Read + Unpin>(
     reader: &mut PacketReader<R>,
 ) -> Result<Packet, Error> {
     match reader.packet_header().await? {
@@ -64,7 +64,7 @@ pub async fn read_packet<R: AsyncRead + Unpin>(
     }
 }
 
-pub async fn write_encryption_request<W: AsyncWrite + Unpin>(
+pub async fn write_encryption_request<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     public_key: &[u8],
     verify_token: &[u8],
@@ -76,7 +76,7 @@ pub async fn write_encryption_request<W: AsyncWrite + Unpin>(
         .flush().await
 }
 
-pub async fn write_login_success<W: AsyncWrite + Unpin>(
+pub async fn write_login_success<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     uuid: &str,
     player_name: &str,
@@ -87,7 +87,7 @@ pub async fn write_login_success<W: AsyncWrite + Unpin>(
         .flush().await
 }
 
-pub async fn write_join_game<W: AsyncWrite + Unpin>(
+pub async fn write_join_game<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     entity_id: i32,
     game_mode: sim::GameMode,

@@ -1,9 +1,7 @@
-use hyper_tls::HttpsConnector;
 use log::trace;
 use std::error::Error;
 
 const HAS_JOINED: &str = "https://sessionserver.mojang.com/session/minecraft/hasJoined";
-const GET_USER: &str = "https://api.mojang.com/users/profiles/minecraft";
 
 #[derive(Debug)]
 pub enum ApiError {
@@ -40,10 +38,24 @@ impl PlayerInfo {
     }
 }
 
-async fn read_player_info(
-    resp: http::response::Response<hyper::Body>,
-) -> Result<PlayerInfo, Box<dyn Error>> {
-    let resp = hyper::body::to_bytes(resp).await?;
+pub async fn player_join_session(
+    player_name: &str,
+    server_hash: &str,
+) -> Result<PlayerInfo, Box<dyn Error + Send + Sync + 'static>> {
+    let mut url = url::Url::parse(HAS_JOINED).unwrap();
+    url.query_pairs_mut()
+        .append_pair("username", &player_name)
+        .append_pair("serverId", &server_hash);
+    let url = url.to_string();
+
+    trace!("sending login request: {}", url);
+    let mut resp = surf::get(url).await?;
+
+    if resp.status().as_u16() != 200 {
+        return Err(Box::new(ApiError::LoginFail));
+    }
+
+    let resp = resp.body_bytes().await?;
     let resp = serde_json::from_slice(&resp)?;
 
     match resp {
@@ -76,45 +88,5 @@ async fn read_player_info(
             Ok(PlayerInfo { player_name, uuid })
         }
         _ => Err(Box::new(ApiError::InvalidData)),
-    }
-}
-
-pub async fn get_player_info(player_name: &str) -> Result<PlayerInfo, Box<dyn Error>> {
-    let mut url = url::Url::parse(GET_USER).unwrap();
-    if let Ok(mut path) = url.path_segments_mut() {
-        path.push(player_name);
-    }
-
-    let url = url.to_string().parse().unwrap();
-
-    trace!("sending player request: {}", url);
-    let connector = HttpsConnector::new();
-    let client = hyper::Client::builder().build::<_, hyper::Body>(connector);
-    let resp = client.get(url).await?;
-
-    match resp.status().as_u16() {
-        200 => read_player_info(resp).await,
-        _ => Err(Box::new(ApiError::LoginFail)),
-    }
-}
-
-pub async fn player_join_session(
-    player_name: &str,
-    server_hash: &str,
-) -> Result<PlayerInfo, Box<dyn Error>> {
-    let mut url = url::Url::parse(HAS_JOINED).unwrap();
-    url.query_pairs_mut()
-        .append_pair("username", &player_name)
-        .append_pair("serverId", &server_hash);
-    let url = url.to_string().parse().unwrap();
-
-    trace!("sending login request: {}", url);
-    let connector = HttpsConnector::new();
-    let client = hyper::Client::builder().build::<_, hyper::Body>(connector);
-    let resp = client.get(url).await?;
-
-    match resp.status().as_u16() {
-        200 => read_player_info(resp).await,
-        _ => Err(Box::new(ApiError::LoginFail)),
     }
 }

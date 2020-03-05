@@ -7,8 +7,8 @@ use rand::{self, RngCore};
 use std::error::Error;
 use std::net::SocketAddr;
 use stream_cipher::NewStreamCipher;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc::{Receiver, Sender};
+use async_std::io::{Read, Write};
+use async_std::sync::{ Sender, Receiver };
 
 #[derive(Debug)]
 pub enum ConnectionError {
@@ -17,7 +17,8 @@ pub enum ConnectionError {
     InvalidVerifier,
     InvalidKey,
     ServerClosing,
-    UnsupportedVersion
+    UnsupportedVersion,
+    AuthenticationFailed
 }
 
 impl Error for ConnectionError {}
@@ -31,11 +32,12 @@ impl std::fmt::Display for ConnectionError {
             Self::InvalidKey => write!(f, "Authentication failed."),
             Self::ServerClosing => write!(f, "The server is shutting down."),
             Self::UnsupportedVersion => write!(f, "Your client version is not supported."),
+            Self::AuthenticationFailed => write!(f, "Authentication failed."),
         }
     }
 }
 
-pub struct Connection<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>
+pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
 {
     key: Box<InsecurePrivateKey>,
     state: ConnectionState,
@@ -48,7 +50,7 @@ pub struct Connection<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unp
     send: Sender<sim::SimMessages>,
 }
 
-impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>
+impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
     std::fmt::Display for Connection<R, W>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
@@ -71,7 +73,7 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
     }
 }
 
-impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>
+impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static>
     Connection<R, W>
 {
     pub fn new(
@@ -97,7 +99,7 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
     }
 
     pub fn execute(mut self) {
-        tokio::spawn(async move {
+        async_std::task::spawn(async move {
             let e = loop {
                 let result = match self.state {
                     ConnectionState::Open => self.execute_open().await,
@@ -233,8 +235,10 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
 
                 trace!("{} key decrypted", self);
                 let server_hash = mojang::hash(b"" as &[u8], &key, self.key.public_der());
-                let player_info =
-                    mojang::api::player_join_session(&player_name, &server_hash).await?;
+                let player_info = match mojang::api::player_join_session(&player_name, &server_hash).await {
+                    Ok(r) => r,
+                    Err(_) => return Err(ConnectionError::AuthenticationFailed.into())
+                };
                 trace!(
                     "{} player info retrieved for {} with uuid {}",
                     self,
@@ -270,10 +274,7 @@ impl<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'stat
                 let (message, recv) = sim::create_client(10);
                 self.recv = Some(recv);
 
-                if self.send.send(message).await.is_err() {
-                    return Err(ConnectionError::ServerClosing.into());
-                }
-
+                self.send.send(message).await;
                 self.state = ConnectionState::RunningGame;
                 Ok(())
             }

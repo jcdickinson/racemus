@@ -5,20 +5,21 @@ authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.2", features = ["full", "fs"] }
 log = "0.4"
 pretty_env_logger = "0.4"
-circular = { git = "https://github.com/sozu-proxy/circular" }
+circular = "0.3"
 ring = "0.16"
-untrusted = { version = "0.7.0" }
+untrusted = "0.7.0"
 num = "0.2"
 rand = "0.7"
-hyper = "0.13"
 http = "0.2"
 url = "2.1"
-hyper-tls = "0.4"
 serde_json = "1.0"
 aes = "0.3"
 cfb8 = "0.3"
 stream-cipher = "0.3"
-futures = "0.3"
+surf = "1.0.3"
+
+[dependencies.async-std]
+version = "1.5"
+features = ["attributes", "unstable"]

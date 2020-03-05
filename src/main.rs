@@ -10,8 +10,8 @@ pub mod sim;
 use connection::Connection;
 use log::{error, info, warn};
 use std::env;
-use tokio::net::TcpListener;
-use tokio::prelude::*;
+use async_std::net::TcpListener;
+use async_std::prelude::*;
 
 const ENV_LOG: &str = "RACEMUS_LOG";
 const ENV_ENDPOINT: &str = "RACEMUS_ENDPOINT";
@@ -21,7 +21,7 @@ const DEFAULT_LISTEN: &str = "0.0.0.0:25565";
 const DEFAULT_PRIVATE: &str = "server_rsa";
 const DEFAULT_PUBLIC: &str = "server_rsa.pub";
 
-#[tokio::main]
+#[async_std::main]
 async fn main() {
     pretty_env_logger::init_custom_env(ENV_LOG);
     let addr = env::var(ENV_ENDPOINT).unwrap_or_else(|_| DEFAULT_LISTEN.to_string());
@@ -31,7 +31,7 @@ async fn main() {
         Err(_) => return,
     };
 
-    let mut listener = match TcpListener::bind(&addr).await {
+    let listener = match TcpListener::bind(&addr).await {
         Ok(listener) => {
             info!("listening on: {}", addr);
             listener
@@ -52,9 +52,8 @@ async fn main() {
                     warn!("({}) failed to set no_delay: {}", cli, error);
                 }
 
-                let (read, write) = tokio::io::split(socket);
                 let send = simulation.clone();
-                let connection = Connection::new(read, write, send, cli, keys.clone());
+                let connection = Connection::new(socket.clone(), socket, send, cli, keys.clone());
                 connection.execute();
             }
             Err(error) => {
@@ -94,7 +93,7 @@ async fn read_keys() -> Result<crypto::insecure::InsecurePrivateKey, ()> {
 }
 
 async fn read_file(file_name: &str) -> Result<Vec<u8>, ()> {
-    let mut file = match tokio::fs::File::open(file_name).await {
+    let mut file = match async_std::fs::File::open(file_name).await {
         Ok(file) => file,
         Err(error) => match error.kind() {
             std::io::ErrorKind::NotFound => {

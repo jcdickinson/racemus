@@ -1,7 +1,7 @@
-use super::{PacketReader};
+use super::PacketReader;
+use async_std::io::Read;
 use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
-use tokio::io::{AsyncRead};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Packet {
@@ -37,9 +37,7 @@ pub enum RequestedState {
     Login,
 }
 
-pub async fn read_packet<R: AsyncRead + Unpin>(
-    reader: &mut PacketReader<R>,
-) -> Result<Packet, Error> {
+pub async fn read_packet<R: Read + Unpin>(reader: &mut PacketReader<R>) -> Result<Packet, Error> {
     match reader.packet_header().await? {
         0x00 => {
             let version = reader.var_i32().await?;
@@ -49,37 +47,35 @@ pub async fn read_packet<R: AsyncRead + Unpin>(
             let next_state = match next_state {
                 0x01 => RequestedState::Status,
                 0x02 => RequestedState::Login,
-                _ => return Err(ErrorKind::InvalidData.into())
+                _ => return Err(ErrorKind::InvalidData.into()),
             };
             Ok(Packet::Handshake(Handshake {
                 version,
                 addr,
                 port,
-                next_state
+                next_state,
             }))
         }
         _ => Err(ErrorKind::InvalidData.into()),
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::executor::block_on;
-    use std::io::Cursor;
+    use async_std::io::Cursor;
+    use async_std::task::block_on;
 
     macro_rules! sync {
         ($e:expr) => {
             block_on($e).unwrap()
         };
     }
-    
     macro_rules! sync_err {
         ($e:expr) => {
             match block_on($e) {
                 Ok(_) => None,
-                Err(e) => Some(e.kind())
+                Err(e) => Some(e.kind()),
             }
         };
     }

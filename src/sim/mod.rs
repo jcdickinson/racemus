@@ -1,7 +1,7 @@
 mod messages;
 pub use messages::*;
 
-use tokio::sync::mpsc::{ channel, Receiver, Sender };
+use async_std::sync::{ channel, Sender, Receiver };
 
 pub fn create_client(backlog: usize) -> (SimMessages, Receiver<ClientMessages>) {
     let (tx, rx) = channel::<ClientMessages>(backlog);
@@ -26,11 +26,11 @@ impl Simulation {
 
     pub fn execute(mut self) -> Sender<SimMessages> {
         let sender = self.sender.clone();
-        tokio::spawn(async move {
+        async_std::task::spawn(async move {
             loop {
                 if let Some(message) = self.receiver.recv().await {
                     match message {
-                        SimMessages::Accept(mut cli) => {
+                        SimMessages::Accept(cli) => {
                             let _ = cli.send(ClientMessages::JoinGame(JoinGame {
                                 entity_id: 5,
                                 game_mode: GameMode::Softcore(GameModeKind::Survival),

@@ -8,14 +8,15 @@ use cfb8::Cfb8;
 use circular::Buffer;
 use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use async_std::io::{Read, Write};
+use async_std::prelude::*;
 
 pub const SERVER_VERSION: &str = "1.15.2";
 pub const SERVER_VERSION_NUMBER: i32 = 578;
 
 pub type AesCfb8 = Cfb8<Aes128>;
 
-pub struct PacketWriter<W: AsyncWrite + Unpin> {
+pub struct PacketWriter<W: Write + Unpin> {
     target: Vec<u8>,
     writer: W,
     cipher: Option<AesCfb8>
@@ -54,7 +55,7 @@ macro_rules! build_write_fixint {
     };
 }
 
-impl<W: AsyncWrite + Unpin> PacketWriter<W> {
+impl<W: Write + Unpin> PacketWriter<W> {
     pub fn new(writer: W) -> Self {
         Self {
             target: Vec::new(),
@@ -111,7 +112,7 @@ impl<W: AsyncWrite + Unpin> PacketWriter<W> {
     }
 }
 
-pub async fn write_disconnect_login<W: AsyncWrite + Unpin>(
+pub async fn write_disconnect_login<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     reason: &str,
 ) -> Result<(), std::io::Error> {
@@ -119,7 +120,7 @@ pub async fn write_disconnect_login<W: AsyncWrite + Unpin>(
     writer.flush().await
 }
 
-pub async fn write_disconnect_play<W: AsyncWrite + Unpin>(
+pub async fn write_disconnect_play<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     reason: &str,
 ) -> Result<(), std::io::Error> {
@@ -127,7 +128,7 @@ pub async fn write_disconnect_play<W: AsyncWrite + Unpin>(
     writer.flush().await
 }
 
-pub struct PacketReader<R: AsyncRead + Unpin> {
+pub struct PacketReader<R: Read + Unpin> {
     buffer: Buffer,
     current_len: usize,
     reader: R,
@@ -175,7 +176,7 @@ macro_rules! build_read_fixint {
     };
 }
 
-impl<R: AsyncRead + Unpin> PacketReader<R> {
+impl<R: Read + Unpin> PacketReader<R> {
     #[cfg(not(test))]
     const BUFFER_INIT: usize = 1024;
     #[cfg(not(test))]
@@ -318,8 +319,8 @@ impl<R: AsyncRead + Unpin> PacketReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::executor::block_on;
-    use std::io::Cursor;
+    use async_std::task::block_on;
+    use async_std::io::Cursor;
     use cfb8::stream_cipher::NewStreamCipher;
 
     macro_rules! sync {

@@ -52,15 +52,15 @@ pub fn hash(server_id: &[u8], shared_secret: &[u8], public_key_der: &[u8]) -> St
 
     let mut nonzero = false;
     let mut j = 1;
-    for c in twos {
-        let c = *c;
+    for i in twos {
+        let c = i >> 4;
         nonzero |= c != 0;
         if nonzero {
             result[j] = to_hex(c);
             j += 1;
         }
 
-        let c = c & 0b1111;
+        let c = i & 0b1111;
         nonzero |= c != 0;
         if nonzero {
             result[j] = to_hex(c);

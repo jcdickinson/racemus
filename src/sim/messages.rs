@@ -1,8 +1,8 @@
 use crate::protocol::*;
 use std::io::Error;
 use std::marker::Unpin;
-use tokio::io::AsyncWrite;
-use tokio::sync::mpsc::{ Sender };
+use async_std::io::Write;
+use async_std::sync::{ Sender };
 
 pub enum ClientMessages {
     JoinGame(JoinGame),
@@ -34,7 +34,7 @@ pub struct JoinGame {
 }
 
 impl JoinGame {
-    pub async fn write<W: AsyncWrite + Unpin>(&self, writer: &mut PacketWriter<W>) -> Result<(), Error> {
+    pub async fn write<W: Write + Unpin>(&self, writer: &mut PacketWriter<W>) -> Result<(), Error> {
         login::write_join_game(
             writer,
             self.entity_id,
