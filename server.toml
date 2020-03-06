@@ -1,0 +1,76 @@
+[network]
+# The IP for the server to bind to.
+# Default: 0.0.0.0
+ip = "0.0.0.0"
+# The port the server is hosting (listening) on.
+# Default: 25565
+port = 25565
+# This is the message that is displayed in the server list of the client,
+# below the name. 
+# Default: "A Minecraft Server"
+motd = "A Minecraft Server"
+
+[security]
+# The private and public key file can be created with openssl:
+#   openssl genrsa -out server_rsa.pem 1024
+#   openssl rsa -in server_rsa.pem -inform PEM -outform DER -out server_rsa
+#   openssl rsa -in server_rsa.pem -inform PEM -outform DER -pubout -out server_rsa.pub
+
+# The file that the server reads its private key pair from.
+# Default: server_rsa
+private-key = "server_rsa"
+# The file that the server reads its public key pair from.
+# Default: server_rsa.pub
+public-key = "server_rsa.pub"
+
+[game]
+# The intial seed used to generate the dimensions. This value is stored when a
+# dimension is generated for the first time, so changes won't be reflected in
+# new chunks.
+# Default: (random)
+# seed = "racemus"
+
+# Defines the mode of gameplay.
+# Values:
+#  0 - Survival
+#  1 - Creative
+#  2 - Adventure
+#  3 - Spectator
+# Default: 0
+gamemode = 0 
+
+# Defines the difficulty (such as damage dealt by mobs and the way hunger and
+# poison affects players) of the server.
+# Values:
+#  0 - Peaceful
+#  1 - Easy
+#  2 - Normal
+#  3 - Hard
+# Default: 1
+difficulty = 0
+
+# If set to true, server difficulty is ignored and set to hard and players will
+# be set to spectator mode if they die.
+# Default: false
+hardcore = false
+
+# The distance of surrounding chunks the server sends to players.
+# Values: 3 - 32
+# Default: 10
+view-distance = 10
+
+# The maximum number of players that can play on the server at the same time.
+# Note that more players on the server consume more resources. Extremely large
+# values for this field result in the client-side user list being broken. 
+# Default: 20
+max-players = 20
+
+# If set to true, connected clients will reduce the amount of debug information
+# presented to the user.
+# Default: false
+reduce-debug-info = false
+
+# If set to false, connected clients will be immediately respawned when the
+# character dies.
+# Default: true
+enable-respawn-screen = true

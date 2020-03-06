@@ -1,5 +1,6 @@
 #![warn(rust_2018_idioms)]
 
+pub mod config;
 pub mod connection;
 pub mod mojang;
 pub mod sim;
@@ -8,22 +9,28 @@ use async_std::net::TcpListener;
 use async_std::prelude::*;
 use connection::Connection;
 use log::{error, info, warn};
-use std::env;
 
 const ENV_LOG: &str = "RACEMUS_LOG";
-const ENV_ENDPOINT: &str = "RACEMUS_ENDPOINT";
-const ENV_PRIVATE: &str = "RACEMUS_PRIVATE_KEY";
-const ENV_PUBLIC: &str = "RACEMUS_PUBLIC_KEY";
-const DEFAULT_LISTEN: &str = "0.0.0.0:25565";
-const DEFAULT_PRIVATE: &str = "server_rsa";
-const DEFAULT_PUBLIC: &str = "server_rsa.pub";
 
 #[async_std::main]
 async fn main() {
     pretty_env_logger::init_custom_env(ENV_LOG);
-    let addr = env::var(ENV_ENDPOINT).unwrap_or_else(|_| DEFAULT_LISTEN.to_string());
+    let config_data = match config::Config::read("server.toml").await {
+        Ok(r) => r,
+        Err(e) => {
+            error!("invalid configuration file: {}", e);
+            return;
+        }
+    };
 
-    let keys = match read_keys().await {
+    let addr = config_data.network().addr();
+
+    let keys = match read_keys(
+        config_data.security().private_key(),
+        config_data.security().public_key(),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(_) => return,
     };
@@ -38,8 +45,8 @@ async fn main() {
             return;
         }
     };
-    let simulation = sim::Simulation::new(10);
-    let simulation = simulation.execute();
+    let system = acteur::System::new();
+    system.send::<sim::Simulation, _>(0, sim::Configuration::from(&config_data));
 
     loop {
         match listener.accept().await {
@@ -49,8 +56,15 @@ async fn main() {
                     warn!("({}) failed to set no_delay: {}", cli, error);
                 }
 
-                let send = simulation.clone();
-                let connection = Connection::new(socket.clone(), socket, send, cli, keys.clone());
+                let send = system.clone();
+                let connection = Connection::new(
+                    socket.clone(),
+                    socket,
+                    send,
+                    cli,
+                    keys.clone(),
+                    config_data.network().motd().to_string(),
+                );
                 connection.execute();
             }
             Err(error) => {
@@ -61,10 +75,10 @@ async fn main() {
     }
 }
 
-async fn read_keys() -> Result<connection::InsecurePrivateKey, ()> {
-    let private_key_path = env::var(ENV_PRIVATE).unwrap_or_else(|_| DEFAULT_PRIVATE.to_string());
-    let public_key_path = env::var(ENV_PUBLIC).unwrap_or_else(|_| DEFAULT_PUBLIC.to_string());
-
+async fn read_keys(
+    private_key_path: &str,
+    public_key_path: &str,
+) -> Result<connection::InsecurePrivateKey, ()> {
     let private_key = match read_file(&private_key_path).await {
         Ok(r) => r,
         Err(_) => {

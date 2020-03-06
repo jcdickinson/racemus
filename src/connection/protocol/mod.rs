@@ -12,7 +12,7 @@ use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
 
 pub const SERVER_VERSION: &str = "1.15.2";
-pub const SERVER_VERSION_NUMBER: i32 = 579;
+pub const SERVER_VERSION_NUMBER: i32 = 578;
 
 pub type AesCfb8 = Cfb8<Aes128>;
 

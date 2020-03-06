@@ -5,6 +5,7 @@ use async_std::sync::Sender;
 use std::io::Error;
 use std::marker::Unpin;
 
+#[derive(Debug)]
 pub enum ClientMessages {
     JoinGame {
         entity_id: i32,

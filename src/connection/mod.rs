@@ -5,7 +5,7 @@ mod protocol;
 use crate::mojang;
 use crate::sim;
 use async_std::io::{Read, Write};
-use async_std::sync::{Receiver, Sender};
+use async_std::sync::Receiver;
 pub use crypto::insecure::InsecurePrivateKey;
 use log::{error, info, trace};
 use protocol::*;
@@ -53,8 +53,9 @@ pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send 
     reader: PacketReader<R>,
     writer: PacketWriter<W>,
     recv: Option<Receiver<messages::ClientMessages>>,
-    send: Sender<messages::ServerMessages>,
+    system: acteur::System,
     version: Option<i32>,
+    motd: String,
 }
 
 impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> std::fmt::Display
@@ -88,9 +89,10 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
     pub fn new(
         reader: R,
         writer: W,
-        send: Sender<messages::ServerMessages>,
+        system: acteur::System,
         addr: SocketAddr,
         key: InsecurePrivateKey,
+        motd: String,
     ) -> Self {
         let writer = PacketWriter::new(writer);
         let reader = PacketReader::new(reader);
@@ -98,7 +100,8 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
             addr,
             reader,
             writer,
-            send,
+            system,
+            motd,
             state: ConnectionState::Open,
             key: Box::new(key),
             player_name: None,
@@ -138,6 +141,13 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         if let Ok(chat) = crate::mojang::chat::trivial(&reason) {
             let _ = match self.state {
                 ConnectionState::RunningGame => {
+                    let player_name = std::mem::replace(&mut self.player_name, None);
+                    if let Some(player_name) = player_name {
+                        self.system.send::<sim::Simulation, _>(
+                            0,
+                            sim::PlayerDisconnected::new(player_name),
+                        );
+                    }
                     write_disconnect_play(&mut self.writer, &chat).await
                 }
                 _ => write_disconnect_login(&mut self.writer, &chat).await,
@@ -166,7 +176,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         match status::read_packet(&mut self.reader).await? {
             status::Packet::Request => {
                 trace!("{} request for server status", self);
-                status::write_response(&mut self.writer).await?;
+                status::write_response(&mut self.writer, &self.motd).await?;
                 self.state = ConnectionState::AwaitingStatusPing;
 
                 Ok(())
@@ -286,11 +296,17 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     player_info.player_name(),
                     player_info.uuid()
                 );
-                let (message, recv) = sim::create_client(10);
-                self.recv = Some(recv);
 
-                self.send.send(message).await;
                 self.state = ConnectionState::RunningGame;
+
+                let (tx, rx) = async_std::sync::channel(10);
+                self.recv = Some(rx);
+
+                self.system.send::<sim::Simulation, _>(
+                    0,
+                    sim::PlayerConnected::new(player_name.to_string(), tx),
+                );
+
                 Ok(())
             }
             _ => Err(ConnectionError::InvalidTransition.into()),
@@ -302,12 +318,14 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
             Some(m) => m,
         };
 
-        let message = match recv.recv().await {
-            None => return Err(ConnectionError::ServerClosing.into()),
-            Some(m) => m,
-        };
+        while self.state == ConnectionState::RunningGame {
+            let message = match recv.recv().await {
+                None => return Err(ConnectionError::ServerClosing.into()),
+                Some(m) => m,
+            };
 
-        message.write(&mut self.writer).await?;
+            message.write(&mut self.writer).await?;
+        }
         Ok(())
     }
 }

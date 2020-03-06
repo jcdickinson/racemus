@@ -34,15 +34,21 @@ pub async fn read_packet<R: Read + Unpin>(reader: &mut PacketReader<R>) -> Resul
     }
 }
 
-pub async fn write_response<W: Write + Unpin>(writer: &mut PacketWriter<W>) -> Result<(), Error> {
+pub async fn write_response<W: Write + Unpin>(
+    writer: &mut PacketWriter<W>,
+    motd: &str,
+) -> Result<(), Error> {
     let response = json!({
         "version": {
             "name": super::SERVER_VERSION,
             "protocol": super::SERVER_VERSION_NUMBER
         },
         "players": {
-            "max": 100,
+            "max": 0,
             "online": 0
+        },
+        "description": {
+            "text": motd
         }
     });
     let s = serde_json::to_string(&response).unwrap();
