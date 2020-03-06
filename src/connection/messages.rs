@@ -17,6 +17,20 @@ pub enum ClientMessages {
         reduce_debug: bool,
         enable_respawn_screen: bool,
     },
+    HeldItemChange {
+        slot: u8,
+    },
+    DeclareRecipes,
+    DeclareTags,
+    PlayerPositionAndLook {
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
+        flags: u8,
+        teleport_id: i32,
+    },
 }
 
 impl ClientMessages {
@@ -42,6 +56,30 @@ impl ClientMessages {
                     *view_distance,
                     *reduce_debug,
                     *enable_respawn_screen,
+                )
+                .await
+            }
+            Self::HeldItemChange { slot } => play::write_held_item_change(writer, *slot).await,
+            Self::DeclareRecipes => play::declare_recipes(writer).await,
+            Self::DeclareTags => play::declare_tags(writer).await,
+            Self::PlayerPositionAndLook {
+                x,
+                y,
+                z,
+                yaw,
+                pitch,
+                flags,
+                teleport_id,
+            } => {
+                play::player_position_and_look(
+                    writer,
+                    *x,
+                    *y,
+                    *z,
+                    *yaw,
+                    *pitch,
+                    *flags,
+                    *teleport_id,
                 )
                 .await
             }

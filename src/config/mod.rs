@@ -3,6 +3,7 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use serde_derive::Deserialize;
 use std::convert::TryFrom;
 use std::error::Error;
+use std::convert::TryInto;
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -301,9 +302,7 @@ impl TryFrom<RawGameConfig> for GameConfig {
         let mut ctx = ring::digest::Context::new(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY);
         ctx.update(value.seed.as_bytes());
         let digest = ctx.finish();
-        let mut copy = [0u8; 8];
-        copy.copy_from_slice(&digest.as_ref()[0..8]);
-        let seed = u64::from_ne_bytes(copy);
+        let seed = u64::from_ne_bytes(digest.as_ref()[0..8].try_into().unwrap());
 
         let kind = match value.game_mode {
             0 => crate::sim::GameModeKind::Survival,

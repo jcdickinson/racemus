@@ -1,5 +1,6 @@
 pub mod login;
 pub mod open;
+pub mod play;
 pub mod status;
 
 use aes::Aes128;
@@ -10,6 +11,7 @@ use cfb8::Cfb8;
 use circular::Buffer;
 use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
+use std::convert::TryInto;
 
 pub const SERVER_VERSION: &str = "1.15.2";
 pub const SERVER_VERSION_NUMBER: i32 = 578;
@@ -40,15 +42,10 @@ macro_rules! build_write_varint {
         }
     };
 }
-macro_rules! build_write_fixint {
+macro_rules! build_write_fixnum {
     ($name:ident, $type:ty) => {
         pub fn $name(&mut self, val: $type) -> &mut Self {
-            const SIZE: usize = std::mem::size_of::<$type>();
-            let val = val as u64;
-            for i in (0..SIZE).rev() {
-                let v = (val >> (i * 8)) & 0b1111_1111;
-                self.target.push(v as u8);
-            }
+            self.target.extend_from_slice(&val.to_be_bytes() as &[u8]);
             self
         }
     };
@@ -74,9 +71,11 @@ impl<W: Write + Unpin> PacketWriter<W> {
     }
 
     build_write_varint!(var_i32, i32);
-    build_write_fixint!(fix_u8, u8);
-    build_write_fixint!(fix_i32, i32);
-    build_write_fixint!(fix_u64, u64);
+    build_write_fixnum!(fix_u8, u8);
+    build_write_fixnum!(fix_i32, i32);
+    build_write_fixnum!(fix_u64, u64);
+    build_write_fixnum!(fix_f32, f32);
+    build_write_fixnum!(fix_f64, f64);
 
     pub fn arr_u8(&mut self, val: &[u8]) -> &mut Self {
         self.var_i32(val.len() as i32);
@@ -152,7 +151,7 @@ macro_rules! build_read_varint {
         }
     };
 }
-macro_rules! build_read_fixint {
+macro_rules! build_read_fixnum {
     ($name:ident, $type:ty) => {
         pub async fn $name(&mut self) -> Result<$type, Error> {
             const SIZE: usize = std::mem::size_of::<$type>();
@@ -162,11 +161,7 @@ macro_rules! build_read_fixint {
             if self.buffer.available_data() < SIZE {
                 self.fill(SIZE).await?
             }
-            let mut result = 0u64;
-            for b in &self.buffer.data()[0..SIZE] {
-                result <<= 8;
-                result |= *b as u64;
-            }
+            let result = <$type>::from_be_bytes(self.buffer.data()[0..SIZE].try_into().unwrap());
             self.current_len -= SIZE;
             self.buffer.consume(SIZE);
             Ok(result as $type)
@@ -232,10 +227,11 @@ impl<R: Read + Unpin> PacketReader<R> {
         Ok(())
     }
 
-    build_read_fixint!(fix_u8, u8);
-    build_read_fixint!(fix_u16, u16);
-    build_read_fixint!(fix_u64, u64);
+    build_read_fixnum!(fix_u8, u8);
+    build_read_fixnum!(fix_u16, u16);
+    build_read_fixnum!(fix_u64, u64);
     build_read_varint!(var_i32, i32);
+    
     async fn length_prefix(&mut self) -> Result<usize, Error> {
         let len = self.var_i32().await?;
         if len <= 0 {
@@ -405,6 +401,8 @@ mod tests {
         packet_writer_fix_u8: w => w.packet_id(50).fix_u8(0x15), b"\x02\x32\x15",
         packet_writer_fix_i32: w => w.packet_id(50).fix_i32(0x1526_3748), b"\x05\x32\x15\x26\x37\x48",
         packet_writer_fix_u64: w => w.packet_id(50).fix_u64(0x1526_3748_5960_7182), b"\x09\x32\x15\x26\x37\x48\x59\x60\x71\x82",
+        packet_writer_fix_f32: w => w.packet_id(50).fix_f32(std::f32::consts::E), b"\x05\x32\x40\x2d\xf8\x54",
+        packet_writer_fix_f64: w => w.packet_id(50).fix_f64(std::f64::consts::E), b"\x09\x32\x40\x05\xbf\x0a\x8b\x14\x57\x69",
         packet_writer_var_buffer: w => w
             .packet_id(50)
             .arr_u8(b"1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" as &[u8]),

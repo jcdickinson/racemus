@@ -73,13 +73,13 @@ impl Configuration {
 }
 
 impl From<&crate::config::Config> for Configuration {
-    fn from(config: &crate::config::Config) -> Self { 
+    fn from(config: &crate::config::Config) -> Self {
         Self {
             game_mode: config.game().game_mode(),
             seed: config.game().seed(),
             render_distance: config.game().view_distance(),
             reduce_debug: config.game().reduce_debug_info(),
-            enable_respawn_screen: config.game().enable_respawn_screen()
+            enable_respawn_screen: config.game().enable_respawn_screen(),
         }
     }
 }
@@ -99,7 +99,10 @@ pub struct PlayerConnected {
 
 impl PlayerConnected {
     pub fn new(name: String, sender: Sender<ClientMessages>) -> Self {
-        Self { name, sender }
+        Self {
+            name,
+            sender,
+        }
     }
 }
 

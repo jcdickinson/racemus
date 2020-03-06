@@ -7,7 +7,13 @@ use async_trait::async_trait;
 pub struct Player {
     perm_id: u32,
     dimension: i32,
+    held_item_slot: u8,
     connection: Option<PlayerConnection>,
+    x: f64,
+    y: f64,
+    z: f64,
+    yaw: f32,
+    pitch: f32
 }
 
 #[derive(Debug)]
@@ -24,7 +30,13 @@ impl Actor for Player {
         Self {
             perm_id,
             dimension: 0,
+            held_item_slot: 0,
             connection: None,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            yaw: 0.0,
+            pitch: 0.0
         }
     }
 }
@@ -67,6 +79,28 @@ impl Handle<Connected> for Player {
                     reduce_debug: message.world.reduce_debug(),
                     enable_respawn_screen: message.world.enable_respawn_screen(),
                 },
+            )
+            .await;
+        assistant
+            .send::<Player, _>(
+                message.entity_id,
+                ClientMessages::HeldItemChange {
+                    slot: self.held_item_slot
+                }
+            )
+            .await;
+        assistant
+            .send::<Player, _>(
+                message.entity_id,
+                ClientMessages::PlayerPositionAndLook {
+                    x: self.x,
+                    y: self.y,
+                    z: self.z,
+                    yaw: self.yaw,
+                    pitch: self.pitch,
+                    flags: 0,
+                    teleport_id: 0
+                }
             )
             .await;
     }
