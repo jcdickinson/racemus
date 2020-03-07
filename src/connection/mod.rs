@@ -3,7 +3,6 @@ pub mod messages;
 mod protocol;
 
 use crate::mojang;
-use crate::sim;
 use async_std::io::{Read, Write};
 use async_std::sync::Receiver;
 pub use crypto::insecure::InsecurePrivateKey;
@@ -53,7 +52,6 @@ pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send 
     reader: PacketReader<R>,
     writer: PacketWriter<W>,
     recv: Option<Receiver<messages::ClientMessages>>,
-    system: acteur::System,
     version: Option<i32>,
     motd: String,
 }
@@ -89,7 +87,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
     pub fn new(
         reader: R,
         writer: W,
-        system: acteur::System,
         addr: SocketAddr,
         key: InsecurePrivateKey,
         motd: String,
@@ -100,7 +97,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
             addr,
             reader,
             writer,
-            system,
             motd,
             state: ConnectionState::Open,
             key: Box::new(key),
@@ -142,12 +138,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
             let _ = match self.state {
                 ConnectionState::RunningGame => {
                     let player_name = std::mem::replace(&mut self.player_name, None);
-                    if let Some(player_name) = player_name {
-                        self.system.send::<sim::Simulation, _>(
-                            0,
-                            sim::PlayerDisconnected::new(player_name),
-                        );
-                    }
                     write_disconnect_play(&mut self.writer, &chat).await
                 }
                 _ => write_disconnect_login(&mut self.writer, &chat).await,
@@ -301,11 +291,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
 
                 let (tx, rx) = async_std::sync::channel(10);
                 self.recv = Some(rx);
-
-                self.system.send::<sim::Simulation, _>(
-                    0,
-                    sim::PlayerConnected::new(player_name.to_string(), tx),
-                );
 
                 Ok(())
             }

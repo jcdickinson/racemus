@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::sim;
+use crate::models::*;
 use async_std::io::Write;
 use async_std::sync::Sender;
 use std::io::Error;
@@ -9,7 +9,7 @@ use std::marker::Unpin;
 pub enum ClientMessages {
     JoinGame {
         entity_id: i32,
-        game_mode: sim::GameMode,
+        game_mode: GameMode,
         dimension: i32,
         hashed_seed: u64,
         level_type: String,

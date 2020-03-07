@@ -4,6 +4,7 @@ use serde_derive::Deserialize;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::convert::TryInto;
+use crate::models::*;
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -263,8 +264,8 @@ impl SecurityConfig {
 
 pub struct GameConfig {
     seed: u64,
-    game_mode: crate::sim::GameMode,
-    difficulty: crate::sim::Difficulty,
+    game_mode: GameMode,
+    difficulty: Difficulty,
     view_distance: u8,
     max_players: u16,
     reduce_debug_info: bool,
@@ -275,10 +276,10 @@ impl GameConfig {
     pub fn seed(&self) -> u64 {
         self.seed
     }
-    pub fn game_mode(&self) -> crate::sim::GameMode {
+    pub fn game_mode(&self) -> GameMode {
         self.game_mode
     }
-    pub fn difficulty(&self) -> crate::sim::Difficulty {
+    pub fn difficulty(&self) -> Difficulty {
         self.difficulty
     }
     pub fn view_distance(&self) -> u8 {
@@ -305,24 +306,24 @@ impl TryFrom<RawGameConfig> for GameConfig {
         let seed = u64::from_ne_bytes(digest.as_ref()[0..8].try_into().unwrap());
 
         let kind = match value.game_mode {
-            0 => crate::sim::GameModeKind::Survival,
-            1 => crate::sim::GameModeKind::Creative,
-            2 => crate::sim::GameModeKind::Adventure,
-            3 => crate::sim::GameModeKind::Spectator,
+            0 => GameModeKind::Survival,
+            1 => GameModeKind::Creative,
+            2 => GameModeKind::Adventure,
+            3 => GameModeKind::Spectator,
             _ => return Err(ConfigError::InvalidValue("game.game-mode".to_string()).into()),
         };
 
         let game_mode = if value.hardcore {
-            crate::sim::GameMode::Hardcore(kind)
+            GameMode::Hardcore(kind)
         } else {
-            crate::sim::GameMode::Softcore(kind)
+            GameMode::Softcore(kind)
         };
 
         let difficulty = match value.difficulty {
-            0 => crate::sim::Difficulty::Peaceful,
-            1 => crate::sim::Difficulty::Easy,
-            2 => crate::sim::Difficulty::Medium,
-            3 => crate::sim::Difficulty::Hard,
+            0 => Difficulty::Peaceful,
+            1 => Difficulty::Easy,
+            2 => Difficulty::Medium,
+            3 => Difficulty::Hard,
             _ => return Err(ConfigError::InvalidValue("game.difficulty".to_string()).into()),
         };
 

@@ -3,7 +3,7 @@
 pub mod config;
 pub mod connection;
 pub mod mojang;
-pub mod sim;
+pub mod models;
 
 use async_std::net::TcpListener;
 use async_std::prelude::*;
@@ -45,8 +45,6 @@ async fn main() {
             return;
         }
     };
-    let system = acteur::System::new();
-    system.send::<sim::Simulation, _>(0, sim::Configuration::from(&config_data));
 
     loop {
         match listener.accept().await {
@@ -56,11 +54,9 @@ async fn main() {
                     warn!("({}) failed to set no_delay: {}", cli, error);
                 }
 
-                let send = system.clone();
                 let connection = Connection::new(
                     socket.clone(),
                     socket,
-                    send,
                     cli,
                     keys.clone(),
                     config_data.network().motd().to_string(),

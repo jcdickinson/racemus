@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use super::{PacketReader, PacketWriter};
-use crate::sim;
+use crate::models::*;
 use async_std::io::{Read, Write};
 use std::io::{Error, ErrorKind};
 use std::marker::Unpin;
@@ -86,7 +86,7 @@ pub async fn write_login_success<W: Write + Unpin>(
 pub async fn write_join_game<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     entity_id: i32,
-    game_mode: sim::GameMode,
+    game_mode: GameMode,
     dimension: i32,
     hashed_seed: u64,
     level_type: &str,
@@ -95,15 +95,15 @@ pub async fn write_join_game<W: Write + Unpin>(
     enable_respawn_screen: bool,
 ) -> Result<(), Error> {
     let (bit, mode) = match game_mode {
-        sim::GameMode::Hardcore(m) => (0x8u8, m),
-        sim::GameMode::Softcore(m) => (0x0, m),
+        GameMode::Hardcore(m) => (0x8u8, m),
+        GameMode::Softcore(m) => (0x0, m),
     };
 
     let mode = match mode {
-        sim::GameModeKind::Survival => bit,
-        sim::GameModeKind::Creative => 0x1 | bit,
-        sim::GameModeKind::Adventure => 0x2 | bit,
-        sim::GameModeKind::Spectator => 0x3 | bit,
+        GameModeKind::Survival => bit,
+        GameModeKind::Creative => 0x1 | bit,
+        GameModeKind::Adventure => 0x2 | bit,
+        GameModeKind::Spectator => 0x3 | bit,
     };
 
     writer
