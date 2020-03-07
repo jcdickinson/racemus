@@ -59,7 +59,7 @@ async fn main() {
                     socket,
                     cli,
                     keys.clone(),
-                    config_data.network().motd().to_string(),
+                    config_data.network().motd(),
                 );
                 connection.execute();
             }

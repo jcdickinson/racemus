@@ -4,14 +4,15 @@ pub mod play;
 pub mod status;
 
 use aes::Aes128;
-use async_std::io::{Read, Write};
-use async_std::prelude::*;
-use cfb8::stream_cipher::StreamCipher;
-use cfb8::Cfb8;
+use async_std::io::{prelude::*, Read, Write};
+use cfb8::{stream_cipher::StreamCipher, Cfb8};
 use circular::Buffer;
-use std::io::{Error, ErrorKind};
-use std::marker::Unpin;
-use std::convert::TryInto;
+use std::{
+    convert::TryInto,
+    io::{Error, ErrorKind},
+    marker::Unpin,
+    sync::Arc
+};
 
 pub const SERVER_VERSION: &str = "1.15.2";
 pub const SERVER_VERSION_NUMBER: i32 = 578;
@@ -231,7 +232,6 @@ impl<R: Read + Unpin> PacketReader<R> {
     build_read_fixnum!(fix_u16, u16);
     build_read_fixnum!(fix_u64, u64);
     build_read_varint!(var_i32, i32);
-    
     async fn length_prefix(&mut self) -> Result<usize, Error> {
         let len = self.var_i32().await?;
         if len <= 0 {
@@ -283,21 +283,22 @@ impl<R: Read + Unpin> PacketReader<R> {
         Ok(&self.buffer.data()[0..len])
     }
 
-    pub async fn arr_u8(&mut self, max: Option<usize>) -> Result<Vec<u8>, Error> {
+    pub async fn arr_u8(&mut self, max: Option<usize>) -> Result<Arc<Box<[u8]>>, Error> {
         let slice = self.raw_arr_u8(max).await?;
-        let vec = slice.to_vec();
-        self.buffer.consume(vec.len());
+        let len = slice.len();
+        let vec = Arc::new(slice.into());
+        self.buffer.consume(len);
         Ok(vec)
     }
 
-    pub async fn arr_char(&mut self, max: Option<usize>) -> Result<String, Error> {
+    pub async fn arr_char(&mut self, max: Option<usize>) -> Result<Arc<Box<str>>, Error> {
         let slice = self.raw_arr_u8(max).await?;
         let len = slice.len();
         match std::str::from_utf8(slice) {
             Ok(s) => {
                 let s = s.to_string();
                 self.buffer.consume(len);
-                Ok(s)
+                Ok(Arc::new(s.into()))
             }
             Err(_) => Err(ErrorKind::InvalidData.into()),
         }
@@ -450,10 +451,10 @@ mod tests {
             r.fix_u64(), 0x1020_3040_5060_7080
         },
         read_arr_char, b"\x1bFoo \xC2\xA9 bar \xF0\x9D\x8C\x86 baz \xE2\x98\x83 qux": r => {
-            r.arr_char(None), "Foo © bar 𝌆 baz ☃ qux"
+            r.arr_char(None), Arc::new("Foo © bar 𝌆 baz ☃ qux".into())
         },
         read_arr_u8, b"\x0a0123456789": r => {
-            r.arr_u8(None), b"0123456789" as &[u8]
+            r.arr_u8(None), Arc::new((b"0123456789" as &[u8]).into())
         }
     }
     raw_read_error_tests! {

@@ -1,18 +1,22 @@
-use super::protocol::*;
-use crate::models::*;
+use crate::{
+    connection::protocol::*,
+    models::*
+};
 use async_std::io::Write;
-use async_std::sync::Sender;
-use std::io::Error;
-use std::marker::Unpin;
+use std::{
+    io::Error,
+    marker::Unpin,
+    sync::Arc
+};
 
 #[derive(Debug)]
-pub enum ClientMessages {
+pub enum ClientMessage {
     JoinGame {
         entity_id: i32,
         game_mode: GameMode,
         dimension: i32,
         hashed_seed: u64,
-        level_type: String,
+        level_type: Arc<str>,
         view_distance: i32,
         reduce_debug: bool,
         enable_respawn_screen: bool,
@@ -33,7 +37,7 @@ pub enum ClientMessages {
     },
 }
 
-impl ClientMessages {
+impl ClientMessage {
     pub async fn write<W: Write + Unpin>(&self, writer: &mut PacketWriter<W>) -> Result<(), Error> {
         match self {
             Self::JoinGame {
@@ -87,6 +91,3 @@ impl ClientMessages {
     }
 }
 
-pub enum ServerMessages {
-    Accept(Sender<ClientMessages>),
-}

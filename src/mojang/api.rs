@@ -1,5 +1,8 @@
 use log::trace;
-use std::error::Error;
+use std::{
+    error::Error,
+    sync::Arc
+};
 
 const HAS_JOINED: &str = "https://sessionserver.mojang.com/session/minecraft/hasJoined";
 
@@ -25,15 +28,15 @@ impl std::fmt::Display for ApiError {
 }
 
 pub struct PlayerInfo {
-    player_name: String,
-    uuid: String,
+    player_name: Arc<Box<str>>,
+    uuid: Arc<Box<str>>,
 }
 
 impl PlayerInfo {
-    pub fn player_name(&self) -> &String {
+    pub fn player_name(&self) -> &Arc<Box<str>> {
         &self.player_name
     }
-    pub fn uuid(&self) -> &String {
+    pub fn uuid(&self) -> &Arc<Box<str>> {
         &self.uuid
     }
 }
@@ -84,6 +87,9 @@ pub async fn player_join_session(
             uuid.insert(16, '-');
             uuid.insert(12, '-');
             uuid.insert(8, '-');
+
+            let player_name = Arc::new(player_name.into());
+            let uuid = Arc::new(uuid.into());
 
             Ok(PlayerInfo { player_name, uuid })
         }

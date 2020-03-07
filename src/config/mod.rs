@@ -1,9 +1,12 @@
 use async_std::prelude::*;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use serde_derive::Deserialize;
-use std::convert::TryFrom;
-use std::error::Error;
-use std::convert::TryInto;
+use std::{
+    convert::TryFrom,
+    error::Error,
+    convert::TryInto,
+    sync::Arc
+};
 use crate::models::*;
 
 #[derive(Debug)]
@@ -209,14 +212,14 @@ impl TryFrom<RawConfig> for Config {
 
 pub struct NetworkConfig {
     addr: std::net::SocketAddr,
-    motd: String,
+    motd: Arc<Box<str>>,
 }
 
-impl<'a> NetworkConfig {
+impl NetworkConfig {
     pub fn addr(&self) -> &std::net::SocketAddr {
         &self.addr
     }
-    pub fn motd(&self) -> &str {
+    pub fn motd(&self) -> &Arc<Box<str>> {
         &self.motd
     }
 }
@@ -230,22 +233,22 @@ impl TryFrom<RawNetworkConfig> for NetworkConfig {
             Err(e) => return Err(e.into()),
         };
         let addr = std::net::SocketAddr::new(addr, value.port);
-        let motd = value.motd;
+        let motd = Arc::new(value.motd.into());
         Ok(Self { addr, motd })
     }
 }
 
 pub struct SecurityConfig {
-    private_key: String,
-    public_key: String,
+    private_key: Arc<Box<str>>,
+    public_key: Arc<Box<str>>,
 }
 
 impl TryFrom<RawSecurityConfig> for SecurityConfig {
     type Error = Box<dyn Error>;
 
     fn try_from(value: RawSecurityConfig) -> Result<Self, Self::Error> {
-        let private_key = value.private_key;
-        let public_key = value.public_key;
+        let private_key = Arc::new(value.private_key.into());
+        let public_key = Arc::new(value.public_key.into());
         Ok(Self {
             private_key,
             public_key,
@@ -254,10 +257,10 @@ impl TryFrom<RawSecurityConfig> for SecurityConfig {
 }
 
 impl SecurityConfig {
-    pub fn private_key(&self) -> &str {
+    pub fn private_key(&self) -> &Arc<Box<str>> {
         &self.private_key
     }
-    pub fn public_key(&self) -> &str {
+    pub fn public_key(&self) -> &Arc<Box<str>> {
         &self.public_key
     }
 }

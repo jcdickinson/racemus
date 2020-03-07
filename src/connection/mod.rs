@@ -1,16 +1,18 @@
 mod crypto;
-pub mod messages;
+mod models;
 mod protocol;
+pub use crypto::insecure::InsecurePrivateKey;
+pub use models::*;
 
 use crate::mojang;
-use async_std::io::{Read, Write};
-use async_std::sync::Receiver;
-pub use crypto::insecure::InsecurePrivateKey;
+use async_std::{
+    io::{Read, Write},
+    sync::Receiver,
+};
 use log::{error, info, trace};
 use protocol::*;
 use rand::{self, RngCore};
-use std::error::Error;
-use std::net::SocketAddr;
+use std::{error::Error, net::SocketAddr, sync::Arc};
 use stream_cipher::NewStreamCipher;
 
 #[derive(Debug)]
@@ -47,13 +49,13 @@ pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send 
     key: Box<InsecurePrivateKey>,
     state: ConnectionState,
     addr: SocketAddr,
-    player_name: Option<String>,
+    player_name: Option<Arc<Box<str>>>,
     verify: Option<Vec<u8>>,
     reader: PacketReader<R>,
     writer: PacketWriter<W>,
-    recv: Option<Receiver<messages::ClientMessages>>,
+    recv: Option<Receiver<ClientMessage>>,
     version: Option<i32>,
-    motd: String,
+    motd: Arc<Box<str>>,
 }
 
 impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> std::fmt::Display
@@ -89,7 +91,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         writer: W,
         addr: SocketAddr,
         key: InsecurePrivateKey,
-        motd: String,
+        motd: Arc<Box<str>>,
     ) -> Self {
         let writer = PacketWriter::new(writer);
         let reader = PacketReader::new(reader);
@@ -199,7 +201,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 rand::thread_rng().fill_bytes(&mut verify);
                 login::write_encryption_request(&mut self.writer, self.key.public_der(), &verify)
                     .await?;
-                self.player_name = Some(login.player_name().to_string());
+                self.player_name = Some(Arc::new(login.player_name().into()));
                 self.verify = Some(verify);
                 self.state = ConnectionState::AwaitingEncryptionResponse;
 

@@ -1,7 +1,10 @@
 use super::PacketReader;
 use async_std::io::Read;
-use std::io::{Error, ErrorKind};
-use std::marker::Unpin;
+use std::{
+    io::{Error, ErrorKind},
+    marker::Unpin,
+    sync::Arc
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Packet {
@@ -11,7 +14,7 @@ pub enum Packet {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Handshake {
     version: i32,
-    addr: String,
+    addr: Arc<Box<str>>,
     port: u16,
     next_state: RequestedState,
 }
@@ -105,13 +108,13 @@ mod tests {
     read_tests! {
         read_status_handshake, b"\x0b\x00\x02\x05abcde\xaa\xbb\x01": read_packet, Packet::Handshake(Handshake {
             version: 0x02,
-            addr: "abcde".to_string(),
+            addr: Arc::new("abcde".into()),
             port: 0xaabb,
             next_state: RequestedState::Status
         }),
         read_login_handshake, b"\x0b\x00\x02\x05abcde\xaa\xbb\x02": read_packet, Packet::Handshake(Handshake {
             version: 0x02,
-            addr: "abcde".to_string(),
+            addr: Arc::new("abcde".into()),
             port: 0xaabb,
             next_state: RequestedState::Login
         })

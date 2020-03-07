@@ -3,8 +3,11 @@
 use super::{PacketReader, PacketWriter};
 use crate::models::*;
 use async_std::io::{Read, Write};
-use std::io::{Error, ErrorKind};
-use std::marker::Unpin;
+use std::{
+    io::{Error, ErrorKind},
+    marker::Unpin,
+    sync::Arc
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Packet {
@@ -14,27 +17,27 @@ pub enum Packet {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LoginStart {
-    player_name: String,
+    player_name: Arc<Box<str>>,
 }
 
 impl LoginStart {
-    pub fn player_name(&self) -> &str {
+    pub fn player_name(&self) -> &Arc<Box<str>> {
         &self.player_name
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct EncryptionResponse {
-    encrypted_shared_secret: Vec<u8>,
-    encrypted_verifier: Vec<u8>,
+    encrypted_shared_secret: Arc<Box<[u8]>>,
+    encrypted_verifier: Arc<Box<[u8]>>,
 }
 
 impl EncryptionResponse {
     pub fn encrypted_shared_secret(&self) -> &[u8] {
-        &self.encrypted_shared_secret
+        self.encrypted_shared_secret.as_ref()
     }
     pub fn encrypted_verifier(&self) -> &[u8] {
-        &self.encrypted_verifier
+        self.encrypted_verifier.as_ref()
     }
 }
 
