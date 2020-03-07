@@ -1,7 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
 use super::{PacketReader, PacketWriter};
-use crate::models::*;
 use async_std::io::{Read, Write};
 use std::{
     io::{Error, ErrorKind},
@@ -82,43 +81,6 @@ pub async fn write_login_success<W: Write + Unpin>(
         .packet_id(0x02)
         .arr_char(uuid)
         .arr_char(player_name)
-        .flush()
-        .await
-}
-
-pub async fn write_join_game<W: Write + Unpin>(
-    writer: &mut PacketWriter<W>,
-    entity_id: i32,
-    game_mode: GameMode,
-    dimension: i32,
-    hashed_seed: u64,
-    level_type: &str,
-    view_distance: i32,
-    reduce_debug: bool,
-    enable_respawn_screen: bool,
-) -> Result<(), Error> {
-    let (bit, mode) = match game_mode {
-        GameMode::Hardcore(m) => (0x8u8, m),
-        GameMode::Softcore(m) => (0x0, m),
-    };
-
-    let mode = match mode {
-        GameModeKind::Survival => bit,
-        GameModeKind::Creative => 0x1 | bit,
-        GameModeKind::Adventure => 0x2 | bit,
-        GameModeKind::Spectator => 0x3 | bit,
-    };
-
-    writer
-        .packet_id(0x26)
-        .fix_i32(entity_id)
-        .fix_u8(mode)
-        .fix_i32(dimension)
-        .fix_u64(hashed_seed)
-        .arr_char(level_type)
-        .var_i32(view_distance)
-        .fix_bool(reduce_debug)
-        .fix_bool(enable_respawn_screen)
         .flush()
         .await
 }

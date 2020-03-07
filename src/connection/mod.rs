@@ -4,7 +4,10 @@ mod protocol;
 pub use crypto::insecure::InsecurePrivateKey;
 pub use models::*;
 
-use crate::mojang;
+use crate::{
+    controllers::{player, Controllers},
+    mojang,
+};
 use async_std::{
     io::{Read, Write},
     sync::Receiver,
@@ -49,38 +52,38 @@ pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send 
     key: Box<InsecurePrivateKey>,
     state: ConnectionState,
     addr: SocketAddr,
-    player_name: Option<Arc<Box<str>>>,
+    player_uuid: Option<Arc<Box<str>>>,
     verify: Option<Vec<u8>>,
     reader: PacketReader<R>,
     writer: PacketWriter<W>,
     recv: Option<Receiver<ClientMessage>>,
     version: Option<i32>,
-    motd: Arc<Box<str>>,
+    controllers: Controllers,
 }
 
 impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> std::fmt::Display
     for Connection<R, W>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let player_name: &str = if let Some(player_name) = &self.player_name {
-            player_name.as_ref()
+        let player_uuid: &str = if let Some(player_uuid) = &self.player_uuid {
+            player_uuid.as_ref()
         } else {
             "*"
         };
 
         match &self.state {
-            ConnectionState::Open => write!(f, "({}-{} new)", self.addr, player_name),
+            ConnectionState::Open => write!(f, "({}-{} new)", self.addr, player_uuid),
             ConnectionState::AwaitingStatusRequest => {
-                write!(f, "({}-{} state)", self.addr, player_name)
+                write!(f, "({}-{} state)", self.addr, player_uuid)
             }
             ConnectionState::AwaitingStatusPing => {
-                write!(f, "({}-{} ping)", self.addr, player_name)
+                write!(f, "({}-{} ping)", self.addr, player_uuid)
             }
-            ConnectionState::AwaitingLogin => write!(f, "({}-{} login)", self.addr, player_name),
+            ConnectionState::AwaitingLogin => write!(f, "({}-{} login)", self.addr, player_uuid),
             ConnectionState::AwaitingEncryptionResponse => {
-                write!(f, "({}-{} encrypt)", self.addr, player_name)
+                write!(f, "({}-{} encrypt)", self.addr, player_uuid)
             }
-            ConnectionState::RunningGame => write!(f, "({}-{} running)", self.addr, player_name),
+            ConnectionState::RunningGame => write!(f, "({}-{} running)", self.addr, player_uuid),
         }
     }
 }
@@ -91,7 +94,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         writer: W,
         addr: SocketAddr,
         key: InsecurePrivateKey,
-        motd: Arc<Box<str>>,
+        controllers: Controllers,
     ) -> Self {
         let writer = PacketWriter::new(writer);
         let reader = PacketReader::new(reader);
@@ -99,10 +102,10 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
             addr,
             reader,
             writer,
-            motd,
+            controllers,
             state: ConnectionState::Open,
             key: Box::new(key),
-            player_name: None,
+            player_uuid: None,
             verify: None,
             recv: None,
             version: None,
@@ -139,7 +142,11 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         if let Ok(chat) = crate::mojang::chat::trivial(&reason) {
             let _ = match self.state {
                 ConnectionState::RunningGame => {
-                    let player_name = std::mem::replace(&mut self.player_name, None);
+                    if let Some(player_uuid) = std::mem::replace(&mut self.player_uuid, None) {
+                        self.controllers.send_player(player::Message::ConnectionClosed {
+                            player_uuid
+                        }).await;
+                    }
                     write_disconnect_play(&mut self.writer, &chat).await
                 }
                 _ => write_disconnect_login(&mut self.writer, &chat).await,
@@ -168,7 +175,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         match status::read_packet(&mut self.reader).await? {
             status::Packet::Request => {
                 trace!("{} request for server status", self);
-                status::write_response(&mut self.writer, &self.motd).await?;
+                status::write_response(&mut self.writer, &self.controllers.config().network().motd()).await?;
                 self.state = ConnectionState::AwaitingStatusPing;
 
                 Ok(())
@@ -201,7 +208,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 rand::thread_rng().fill_bytes(&mut verify);
                 login::write_encryption_request(&mut self.writer, self.key.public_der(), &verify)
                     .await?;
-                self.player_name = Some(Arc::new(login.player_name().into()));
+                self.player_uuid = Some(login.player_name().clone());
                 self.verify = Some(verify);
                 self.state = ConnectionState::AwaitingEncryptionResponse;
 
@@ -215,7 +222,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         match login::read_packet(&mut self.reader).await? {
             login::Packet::EncryptionResponse(enc) => {
                 trace!("{} encryption response received", self);
-                let player_name = if let Some(player_name) = &self.player_name {
+                let player_name = if let Some(player_name) = &self.player_uuid {
                     player_name
                 } else {
                     return Err(ConnectionError::InvalidTransition.into());
@@ -289,10 +296,17 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     player_info.uuid()
                 );
 
+                self.player_uuid = Some(player_info.uuid().clone());
                 self.state = ConnectionState::RunningGame;
 
                 let (tx, rx) = async_std::sync::channel(10);
                 self.recv = Some(rx);
+
+                self.controllers.send_player(player::Message::ConnectionOpened{
+                    player_uuid: player_info.uuid().clone(),
+                    player_name: player_info.player_name().clone(),
+                    sender: tx,
+                }).await;
 
                 Ok(())
             }

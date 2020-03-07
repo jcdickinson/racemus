@@ -162,6 +162,7 @@ fn enable_respawn_screen_default() -> bool {
     true
 }
 
+#[derive(Debug, Clone)]
 pub struct Config {
     network: NetworkConfig,
     security: SecurityConfig,
@@ -210,6 +211,7 @@ impl TryFrom<RawConfig> for Config {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct NetworkConfig {
     addr: std::net::SocketAddr,
     motd: Arc<Box<str>>,
@@ -238,6 +240,7 @@ impl TryFrom<RawNetworkConfig> for NetworkConfig {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SecurityConfig {
     private_key: Arc<Box<str>>,
     public_key: Arc<Box<str>>,
@@ -265,6 +268,7 @@ impl SecurityConfig {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct GameConfig {
     seed: u64,
     game_mode: GameMode,

@@ -12,12 +12,12 @@ use std::{
 #[derive(Debug)]
 pub enum ClientMessage {
     JoinGame {
-        entity_id: i32,
+        entity_id: EntityId,
         game_mode: GameMode,
         dimension: i32,
         hashed_seed: u64,
-        level_type: Arc<str>,
-        view_distance: i32,
+        level_type: Arc<Box<str>>,
+        view_distance: u8,
         reduce_debug: bool,
         enable_respawn_screen: bool,
     },
@@ -27,11 +27,8 @@ pub enum ClientMessage {
     DeclareRecipes,
     DeclareTags,
     PlayerPositionAndLook {
-        x: f64,
-        y: f64,
-        z: f64,
-        yaw: f32,
-        pitch: f32,
+        position: vek::Vec3<f64>,
+        look: vek::Vec2<f32>,
         flags: u8,
         teleport_id: i32,
     },
@@ -50,7 +47,7 @@ impl ClientMessage {
                 reduce_debug,
                 enable_respawn_screen,
             } => {
-                login::write_join_game(
+                play::write_join_game(
                     writer,
                     *entity_id,
                     *game_mode,
@@ -67,21 +64,15 @@ impl ClientMessage {
             Self::DeclareRecipes => play::declare_recipes(writer).await,
             Self::DeclareTags => play::declare_tags(writer).await,
             Self::PlayerPositionAndLook {
-                x,
-                y,
-                z,
-                yaw,
-                pitch,
+                position,
+                look,
                 flags,
                 teleport_id,
             } => {
                 play::player_position_and_look(
                     writer,
-                    *x,
-                    *y,
-                    *z,
-                    *yaw,
-                    *pitch,
+                    position,
+                    *look,
                     *flags,
                     *teleport_id,
                 )

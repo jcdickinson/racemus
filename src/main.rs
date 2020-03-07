@@ -4,6 +4,8 @@ pub mod config;
 pub mod connection;
 pub mod mojang;
 pub mod models;
+pub mod controllers;
+pub mod sync;
 
 use async_std::net::TcpListener;
 use async_std::prelude::*;
@@ -26,8 +28,8 @@ async fn main() {
     let addr = config_data.network().addr();
 
     let keys = match read_keys(
-        config_data.security().private_key(),
-        config_data.security().public_key(),
+        config_data.security().private_key().as_ref(),
+        config_data.security().public_key().as_ref(),
     )
     .await
     {
@@ -46,6 +48,8 @@ async fn main() {
         }
     };
 
+    let controllers = controllers::Controllers::new(&config_data, 100);
+
     loop {
         match listener.accept().await {
             Ok((socket, cli)) => {
@@ -59,7 +63,7 @@ async fn main() {
                     socket,
                     cli,
                     keys.clone(),
-                    config_data.network().motd(),
+                    controllers.clone(),
                 );
                 connection.execute();
             }
