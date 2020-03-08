@@ -175,7 +175,9 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         match status::read_packet(&mut self.reader).await? {
             status::Packet::Request => {
                 trace!("{} request for server status", self);
-                status::write_response(&mut self.writer, &self.controllers.config().network().motd()).await?;
+                status::write_response(&mut self.writer, 
+                    &self.controllers.config().network().motd(),
+                    self.controllers.config().game().max_players()).await?;
                 self.state = ConnectionState::AwaitingStatusPing;
 
                 Ok(())

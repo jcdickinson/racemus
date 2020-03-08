@@ -1,17 +1,12 @@
 #![allow(clippy::too_many_arguments)]
 
-use super::{PacketWriter};
-use async_std::io::{Write};
-use std::{
-    io::{Error},
-    marker::Unpin
-};
+use super::PacketWriter;
 use crate::models::*;
+use async_std::io::Write;
+use std::{io::Error, marker::Unpin};
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Packet {
-   
-}
+pub enum Packet {}
 
 pub async fn write_join_game<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
@@ -52,30 +47,21 @@ pub async fn write_join_game<W: Write + Unpin>(
         .await
 }
 
-
 pub async fn write_held_item_change<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
-    slot: u8
+    slot: u8,
 ) -> Result<(), Error> {
-    writer
-        .packet_id(0x40)
-        .fix_u8(slot)
-        .flush()
-        .await
+    writer.packet_id(0x40).fix_u8(slot).flush().await
 }
 
-pub async fn declare_recipes<W: Write + Unpin>(
-    writer: &mut PacketWriter<W>
+pub async fn write_declare_recipes<W: Write + Unpin>(
+    writer: &mut PacketWriter<W>,
 ) -> Result<(), Error> {
-    writer
-        .packet_id(0x5B)
-        .fix_i32(0)
-        .flush()
-        .await
+    writer.packet_id(0x5B).fix_i32(0).flush().await
 }
 
-pub async fn declare_tags<W: Write + Unpin>(
-    writer: &mut PacketWriter<W>
+pub async fn write_declare_tags<W: Write + Unpin>(
+    writer: &mut PacketWriter<W>,
 ) -> Result<(), Error> {
     writer
         .packet_id(0x5C)
@@ -87,12 +73,12 @@ pub async fn declare_tags<W: Write + Unpin>(
         .await
 }
 
-pub async fn player_position_and_look<W: Write + Unpin>(
+pub async fn write_player_position_and_look<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     position: &vek::Vec3<f64>,
     look: vek::Vec2<f32>,
     flags: u8,
-    teleport_id: i32
+    teleport_id: i32,
 ) -> Result<(), Error> {
     writer
         .packet_id(0x36)
@@ -105,4 +91,78 @@ pub async fn player_position_and_look<W: Write + Unpin>(
         .var_i32(teleport_id)
         .flush()
         .await
+}
+
+pub async fn write_plugin_brand<W: Write + Unpin>(
+    writer: &mut PacketWriter<W>,
+    brand: &str,
+) -> Result<(), Error> {
+    writer
+        .packet_id(0x19)
+        .arr_char("brand")
+        .arr_char(brand)
+        .flush()
+        .await
+}
+
+pub async fn write_server_difficulty<W: Write + Unpin>(
+    writer: &mut PacketWriter<W>,
+    difficulty: Difficulty,
+    difficulty_locked: bool,
+) -> Result<(), Error> {
+    let difficulty = match difficulty {
+        Difficulty::Peaceful => 0,
+        Difficulty::Easy => 1,
+        Difficulty::Medium => 2,
+        Difficulty::Hard => 3,
+    };
+
+    writer
+        .packet_id(0x0E)
+        .fix_u8(difficulty)
+        .fix_bool(difficulty_locked)
+        .flush()
+        .await
+}
+
+pub async fn write_chunk_data<W: Write + Unpin>(
+    writer: &mut PacketWriter<W>,
+    position: vek::Vec2<i32>
+) -> Result<(), Error> {
+
+    
+    // let hash = std::collections::HashMap::with_capacity(1);
+    // hash.insert("MOTION_BLOCKING", nbt::Value::LongArray(vec![0i64; 36]));
+    // let heightmap = nbt::Value::Compound(hash);
+    
+    // let cursor = std::io::Cursor::new(Vec::new());
+    // nbt::to_writer(&mut cursor, heightmap, None);
+
+    writer
+        .packet_id(0x22)
+        .fix_i32(position.x)
+        .fix_i32(position.y)
+        .fix_bool(true) // Full chunk
+        .fix_i32(0b1) // Primary Bit Mask
+        .var_i32(0);
+
+    // Biomes
+    for i in 0..1024 {
+        writer.fix_i32(0);
+    }
+    
+    // Chunk data
+    writer.var_i32(2 + 1 + 2 + (16 * 16 * 16 * 2));
+    for i in 0..1 {
+        writer.fix_i16(16 * 16 * 16);
+        writer.fix_u8(16);
+        writer.fix_u8(128).fix_u8(8); // 16 * 16 * 16 / (sizeof(u64) / sizeof(u16))
+        for j in 0..(16 * 16 * 16) {
+            writer.fix_i16(0x3);
+        }
+    }
+
+    writer.var_i32(0);
+
+    writer.flush().await
 }

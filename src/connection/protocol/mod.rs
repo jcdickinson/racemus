@@ -73,6 +73,7 @@ impl<W: Write + Unpin> PacketWriter<W> {
 
     build_write_varint!(var_i32, i32);
     build_write_fixnum!(fix_u8, u8);
+    build_write_fixnum!(fix_i16, i16);
     build_write_fixnum!(fix_i32, i32);
     build_write_fixnum!(fix_u64, u64);
     build_write_fixnum!(fix_f32, f32);
@@ -400,6 +401,8 @@ mod tests {
         packet_writer_packet_id: w => w.packet_id(50), b"\x01\x32",
         packet_writer_var_i32: w => w.packet_id(50).var_i32(453), b"\x03\x32\xc5\x03",
         packet_writer_fix_u8: w => w.packet_id(50).fix_u8(0x15), b"\x02\x32\x15",
+        packet_writer_fix_i16: w => w.packet_id(50).fix_i16(0x1526), b"\x03\x32\x15\x26",
+        packet_writer_fix_i32_jono: w => w.packet_id(50).var_i32(16 * 16 * 16 / 4), b"\x05\x32\x15\x26\x37\x48",
         packet_writer_fix_i32: w => w.packet_id(50).fix_i32(0x1526_3748), b"\x05\x32\x15\x26\x37\x48",
         packet_writer_fix_u64: w => w.packet_id(50).fix_u64(0x1526_3748_5960_7182), b"\x09\x32\x15\x26\x37\x48\x59\x60\x71\x82",
         packet_writer_fix_f32: w => w.packet_id(50).fix_f32(std::f32::consts::E), b"\x05\x32\x40\x2d\xf8\x54",

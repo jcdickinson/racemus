@@ -1,3 +1,6 @@
+mod chunk;
+pub use chunk::*;
+
 #[derive(Debug, Clone, Copy)]
 pub enum GameModeKind {
     Survival,

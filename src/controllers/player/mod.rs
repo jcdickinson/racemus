@@ -91,11 +91,24 @@ impl Controller {
             enable_respawn_screen: self.controllers.config().game().enable_respawn_screen(),
         }).await;
 
+        player.sender.send(ClientMessage::PluginBrand{
+            brand: "racemus"
+        }).await;
+
+        player.sender.send(ClientMessage::ServerDifficulty{
+            difficulty: self.controllers.config().game().difficulty(),
+            difficulty_locked: true
+        }).await;
+
         player.sender.send(ClientMessage::PlayerPositionAndLook {
             position: player.position,
             look: player.look,
             flags: 0,
             teleport_id: 0
+        }).await;
+
+        player.sender.send(ClientMessage::ChunkData {
+            position: vek::Vec2::zero()
         }).await;
         
         self.players.insert(player.uuid.clone(), player);
@@ -129,7 +142,7 @@ impl Player {
             entity_id: EntityId::default(),
             game_mode: config.game().game_mode(),
             dimension: 0,
-            position: vek::Vec3::zero(),
+            position: vek::Vec3::new(0.0, 255.0, 0.0),
             look: vek::Vec2::zero()
         }
     }

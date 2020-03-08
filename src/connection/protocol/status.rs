@@ -37,6 +37,7 @@ pub async fn read_packet<R: Read + Unpin>(reader: &mut PacketReader<R>) -> Resul
 pub async fn write_response<W: Write + Unpin>(
     writer: &mut PacketWriter<W>,
     motd: &str,
+    max_players: u16,
 ) -> Result<(), Error> {
     let response = json!({
         "version": {
@@ -44,7 +45,7 @@ pub async fn write_response<W: Write + Unpin>(
             "protocol": super::SERVER_VERSION_NUMBER
         },
         "players": {
-            "max": 0,
+            "max": max_players,
             "online": 0
         },
         "description": {
