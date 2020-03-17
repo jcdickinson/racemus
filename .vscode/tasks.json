@@ -4,9 +4,15 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "cargo test",
-            "type": "cargo",
-            "subcommand": "test",
+            "label": "Cargo Test",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "test"
+            ],
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
             "problemMatcher": [
                 "$rustc"
             ],
@@ -16,9 +22,22 @@
             }
         },
         {
-            "label": "cargo build",
-            "type": "cargo",
-            "subcommand": "build",
+            "label": "Cargo Build",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "build"
+            ],
+            "windows": {
+                "args": [
+                    "build",
+                    "--target",
+                    "x86_64-pc-windows-gnu"
+                ]
+            },
+            "options": {
+                "cwd": "${workspaceRoot}"
+            },
             "problemMatcher": [
                 "$rustc"
             ],

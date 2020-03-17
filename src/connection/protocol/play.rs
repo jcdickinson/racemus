@@ -126,43 +126,9 @@ pub async fn write_server_difficulty<W: Write + Unpin>(
 }
 
 pub async fn write_chunk_data<W: Write + Unpin>(
-    writer: &mut PacketWriter<W>,
-    position: vek::Vec2<i32>
+    _: &mut PacketWriter<W>,
+    _: vek::Vec2<i32>
 ) -> Result<(), Error> {
-
-    
-    // let hash = std::collections::HashMap::with_capacity(1);
-    // hash.insert("MOTION_BLOCKING", nbt::Value::LongArray(vec![0i64; 36]));
-    // let heightmap = nbt::Value::Compound(hash);
-    
-    // let cursor = std::io::Cursor::new(Vec::new());
-    // nbt::to_writer(&mut cursor, heightmap, None);
-
-    writer
-        .packet_id(0x22)
-        .fix_i32(position.x)
-        .fix_i32(position.y)
-        .fix_bool(true) // Full chunk
-        .fix_i32(0b1) // Primary Bit Mask
-        .var_i32(0);
-
-    // Biomes
-    for i in 0..1024 {
-        writer.fix_i32(0);
-    }
-    
-    // Chunk data
-    writer.var_i32(2 + 1 + 2 + (16 * 16 * 16 * 2));
-    for i in 0..1 {
-        writer.fix_i16(16 * 16 * 16);
-        writer.fix_u8(16);
-        writer.fix_u8(128).fix_u8(8); // 16 * 16 * 16 / (sizeof(u64) / sizeof(u16))
-        for j in 0..(16 * 16 * 16) {
-            writer.fix_i16(0x3);
-        }
-    }
-
-    writer.var_i32(0);
-
-    writer.flush().await
+    //writer.flush().await
+    Ok(())
 }

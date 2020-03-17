@@ -14,4 +14,5 @@ Racemus is an experimental Minecraft server.
 
 1. `generate-key.ps1` is both a Powershell and Bash script. You will need
    openssl on the path.
-2. Once you have a key, cargo run should just work.
+2. `rustup target add x86_64-pc-windows-gnu --toolchain nightly`
+3. Once you have a key, cargo run should just work.
