@@ -1,8 +1,8 @@
 branch: true
 ignore-not-existing: true
 llvm: true
-filter: uncovered
 output-type: lcov
 output-file: ./lcov.info
+source-dir: .
 ignore:
-  - "usr/share/rust/*"
+  - "../*"
