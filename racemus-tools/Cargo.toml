@@ -1,0 +1,11 @@
+[package]
+name = "racemus-tools"
+version = "0.0.1"
+authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
+edition = "2018"
+
+[dependencies]
+num = "0.2.1"
+ring = "0.16.11"
+untrusted = "0.7.0"
+async-std = "1.5"

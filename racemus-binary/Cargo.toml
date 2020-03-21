@@ -1,0 +1,18 @@
+[package]
+name = "racemus-binary"
+version = "0.0.1"
+authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4.8"
+ring = "0.16.11"
+aes = "0.3.2"
+cfb8 = "0.3.2"
+circular = "0.3.0"
+url = "2.1"
+serde_json = "1.0"
+surf = "1.0"
+serde = "1.0"
+serde_derive = "1.0"
+async-std = "1.5"
