@@ -210,7 +210,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
 
     async fn execute_login(&mut self) -> Result<(), Box<dyn Error>> {
         match self.reader.read_login().await? {
-            LoginRequest::Start{player_name} => {
+            LoginRequest::Start { player_name } => {
                 trace!("{} request to login as: {}", self, player_name);
                 match self.version {
                     Some(racemus_binary::SERVER_VERSION_NUMBER) => {}
@@ -221,7 +221,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 rand::thread_rng().fill_bytes(&mut verify);
                 self.writer.structure(&LoginResponse::EncryptionRequest {
                     public_key: self.key.public_der(),
-                    verify_token: &verify
+                    verify_token: &verify,
                 })?;
                 self.writer.flush().await?;
                 self.player_uuid = Some(player_name);
@@ -313,7 +313,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     player_info.name(),
                     player_info.uuid()
                 );
-                
+
                 let player_uuid: Arc<str> = player_info.uuid().into();
                 let player_name: Arc<str> = player_info.name().into();
 

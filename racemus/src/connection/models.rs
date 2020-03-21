@@ -1,6 +1,6 @@
 use crate::models::*;
 use async_std::io::Write;
-use racemus_binary::{*, proto::*, BinaryWriter};
+use racemus_binary::{proto::*, BinaryWriter, *};
 use std::{marker::Unpin, sync::Arc};
 
 #[derive(Debug)]
@@ -57,30 +57,28 @@ impl ClientMessage {
                     level_type,
                     view_distance: *view_distance,
                     reduce_debug: *reduce_debug,
-                    enable_respawn_screen: *enable_respawn_screen
+                    enable_respawn_screen: *enable_respawn_screen,
                 })?;
                 writer.flush().await
             }
             Self::PluginBrand { brand } => {
                 writer.structure(&PlayResponse::Plugin {
                     channel: "brand",
-                    data: brand.as_bytes()
+                    data: brand.as_bytes(),
                 })?;
                 writer.flush().await
-            },
+            }
             Self::HeldItemChange { slot } => {
-                writer.structure(&PlayResponse::HeldItemChange {
-                    slot: *slot
-                })?;
+                writer.structure(&PlayResponse::HeldItemChange { slot: *slot })?;
                 writer.flush().await
-            },
+            }
             Self::ServerDifficulty {
                 difficulty,
                 difficulty_locked,
             } => {
                 writer.structure(&PlayResponse::ServerDifficulty {
                     difficulty: (*difficulty).into(),
-                    difficulty_locked: *difficulty_locked
+                    difficulty_locked: *difficulty_locked,
                 })?;
                 writer.flush().await
             }
@@ -94,7 +92,7 @@ impl ClientMessage {
                     position: [position.x, position.y, position.z],
                     look: [look.x, look.y],
                     flags: *flags,
-                    teleport_id: *teleport_id
+                    teleport_id: *teleport_id,
                 })?;
                 writer.flush().await
             }

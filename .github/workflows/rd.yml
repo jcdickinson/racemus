@@ -9,17 +9,17 @@ jobs:
     name: Test
     runs-on: windows-latest
     steps:
-      - name: Checkout sources
+      - name: Checkout Sources
         uses: actions/checkout@v2
 
-      - name: Install nightly toolchain
+      - name: Install Nightly Toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           override: true
 
-      - name: Run cargo test
+      - name: Run Tests
         uses: actions-rs/cargo@v1
         with:
           command: test
@@ -32,17 +32,17 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - name: Checkout sources
+      - name: Checkout Sources
         uses: actions/checkout@v2
 
-      - name: Install nightly toolchain
+      - name: Install Nightly Toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           override: true
 
-      - name: Run cargo build
+      - name: Run Build
         uses: actions-rs/cargo@v1
         with:
           command: build
@@ -50,7 +50,7 @@ jobs:
         env:
           CARGO_INCREMENTAL: 0
       
-      - name: Create zip file
+      - name: Create Package
         run: ./package-windows.ps1
         shell: pwsh
         working-directory: .

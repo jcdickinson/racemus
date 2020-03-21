@@ -39,7 +39,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
                     version,
                     address,
                     port,
-                    next_state
+                    next_state,
                 })
             }
             _ => Ok(OpenRequest::Unknown { packet_id }),

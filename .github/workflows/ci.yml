@@ -6,36 +6,66 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout sources
+      - name: Checkout Sources
         uses: actions/checkout@v2
         
-      - name: Install nightly toolchain
+      - name: Install Nightly Toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           override: true
+          components: rustfmt
 
-      - name: Run cargo check
+      - name: Check Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+      - name: Check Build
         uses: actions-rs/cargo@v1
         with:
           command: check
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  test-windows:
+    name: Windows Tests
+    needs: check
+    runs-on: windows-latest
     steps:
-      - name: Checkout sources
+      - name: Checkout Sources
         uses: actions/checkout@v2
 
-      - name: Install nightly toolchain
+      - name: Install Nightly Toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           override: true
 
-      - name: Run cargo test
+      - name: Run Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all
+        env:
+          CARGO_INCREMENTAL: 0
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Sources
+        uses: actions/checkout@v2
+
+      - name: Install Nightly Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - name: Run Tests
         uses: actions-rs/cargo@v1
         with:
           command: test
@@ -44,13 +74,13 @@ jobs:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
 
-      - name: Gather coverage data
+      - name: Gather Coverage Data
         id: coverage
         uses: actions-rs/grcov@v0.1
         with:
           coveralls-token: ${{ secrets.COVERALLS_TOKEN }}
 
-      - name: Coveralls upload
+      - name: Upload Coverage Data
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -58,39 +88,12 @@ jobs:
           path-to-lcov: ${{ steps.coverage.outputs.report }}
 
   test_finalize:
+    name: Test Teardown
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - name: Coveralls finalization
+      - name: Coveralls Finalization
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           parallel-finished: true
-
-  # Clippy is frequently missing from nightlies
-  # lints:
-  #   name: Lints
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout sources
-  #       uses: actions/checkout@v2
-
-  #     - name: Install nightly toolchain
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #         profile: minimal
-  #         toolchain: nightly
-  #         override: true
-  #         components: rustfmt, clippy
-
-  #     - name: Run cargo fmt
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: fmt
-  #         args: --all -- --check
-
-  #     - name: Run cargo clippy
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: clippy
-  #         args: -- -D warnings

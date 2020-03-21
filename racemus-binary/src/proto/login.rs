@@ -64,9 +64,13 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, LoginResponse<'a>> for BinaryWrit
                 .var_i32(0)? // Server ID (obsolete)
                 .arr_u8(public_key)?
                 .arr_u8(verify_token)?,
-            LoginResponse::Success { player_uuid, player_name } => {
-                self.var_i32(0x02)?.arr_char(player_uuid)?.arr_char(player_name)?
-            }
+            LoginResponse::Success {
+                player_uuid,
+                player_name,
+            } => self
+                .var_i32(0x02)?
+                .arr_char(player_uuid)?
+                .arr_char(player_name)?,
             LoginResponse::Disconnect { reason } => self.var_i32(0x00)?.arr_char(reason)?,
         }
         .insert_len_var_i32(insertion)

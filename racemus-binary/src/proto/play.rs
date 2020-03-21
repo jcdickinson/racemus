@@ -1,4 +1,4 @@
-use crate::{writer::StructuredWriter, BinaryWriter, Error, BinaryReader};
+use crate::{writer::StructuredWriter, BinaryReader, BinaryWriter, Error};
 use async_std::io::{Read, Write};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,9 +59,7 @@ impl From<Difficulty> for u8 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlayRequest {
-    Unknown {
-        packet_id: i32,
-    },
+    Unknown { packet_id: i32 },
 }
 
 impl<R: Read + Unpin> BinaryReader<R> {

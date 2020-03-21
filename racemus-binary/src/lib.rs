@@ -19,7 +19,7 @@ type AesCfb8 = Cfb8<Aes128>;
 pub fn create_aes_cfb8(key: &[u8], iv: &[u8]) -> Result<AesCfb8, Error> {
     match AesCfb8::new_var(key, iv) {
         Ok(r) => Ok(r),
-        Err(_) => Err(ErrorKind::InvalidKey.into())
+        Err(_) => Err(ErrorKind::InvalidKey.into()),
     }
 }
 
