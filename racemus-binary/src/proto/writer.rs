@@ -41,7 +41,7 @@ mod tests {
     use crate::tests::*;
 
     #[test]
-    pub fn test_binary_insert_len_var_i32() -> Result<(), Error> {
+    pub fn binary_writer_insert_len_var_i32() -> Result<(), Error> {
         let mut writer = make_writer();
 
         let pre = writer.create_insertion();
@@ -55,14 +55,14 @@ mod tests {
     }
 
     macro_rules! raw_write_tests {
-        ($($name:ident: $writer:ident => $expr:expr, $expected:expr),*) => {
+        ($($name:ident, $expected:expr, $writer:ident => $expr:expr;)*) => {
             $(
                 #[test]
                 fn $name() -> Result<(), Error> {
                     let mut $writer = make_writer();
                     $expr;
                     let buf = make_buffer($writer);
-                    assert_eq!(buf, $expected);
+                    assert_eq!(buf, include_bytes!($expected) as &[u8]);
                     Ok(())
                 }
             )*
@@ -70,7 +70,11 @@ mod tests {
     }
 
     raw_write_tests!(
-        test_binary_writer_arr_char: w => w.arr_char("this is a string test 🎉✨")?, b"\x1dthis is a string test \xf0\x9f\x8e\x89\xe2\x9c\xa8",
-        test_binary_writer_arr_u8: w => w.arr_u8(b"1234")?, b"\x041234"
+        binary_writer_arr_char, "test-data/arr-char-1.in", w => w
+            .arr_char("this is a string test 🎉✨")?
+            .arr_char("this is a string test1 🎉✨")?;
+        binary_writer_arr_u8, "test-data/arr-u8-1.in", w => w
+            .arr_u8(b"12345")?
+            .arr_u8(b"567890")?;
     );
 }

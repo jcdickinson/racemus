@@ -1,13 +1,13 @@
 use crate::models::*;
 use async_std::io::Write;
-use racemus_proto::{minecraft as proto, PacketWriter};
-use std::{io::Error, marker::Unpin, sync::Arc};
+use racemus_binary::{*, proto::*, BinaryWriter};
+use std::{marker::Unpin, sync::Arc};
 
 #[derive(Debug)]
 pub enum ClientMessage {
     JoinGame {
         entity_id: EntityId,
-        game_mode: GameMode,
+        game_mode: crate::models::GameMode,
         dimension: i32,
         hashed_seed: u64,
         level_type: Arc<Box<str>>,
@@ -19,14 +19,12 @@ pub enum ClientMessage {
         brand: &'static str,
     },
     ServerDifficulty {
-        difficulty: Difficulty,
+        difficulty: crate::models::Difficulty,
         difficulty_locked: bool,
     },
     HeldItemChange {
         slot: u8,
     },
-    DeclareRecipes,
-    DeclareTags,
     PlayerPositionAndLook {
         position: vek::Vec3<f64>,
         look: vek::Vec2<f32>,
@@ -39,7 +37,7 @@ pub enum ClientMessage {
 }
 
 impl ClientMessage {
-    pub async fn write<W: Write + Unpin>(&self, writer: &mut PacketWriter<W>) -> Result<(), Error> {
+    pub async fn write<W: Write + Unpin>(&self, writer: &mut BinaryWriter<W>) -> Result<(), Error> {
         match self {
             Self::JoinGame {
                 entity_id,
@@ -51,35 +49,40 @@ impl ClientMessage {
                 reduce_debug,
                 enable_respawn_screen,
             } => {
-                proto::play::write_join_game(
-                    writer,
-                    (*entity_id).into(),
-                    (*game_mode).into(),
-                    *dimension,
-                    *hashed_seed,
+                writer.structure(&PlayResponse::JoinGame {
+                    entity_id: (*entity_id).into(),
+                    game_mode: (*game_mode).into(),
+                    dimension: *dimension,
+                    hashed_seed: *hashed_seed,
                     level_type,
-                    *view_distance,
-                    *reduce_debug,
-                    *enable_respawn_screen,
-                )
-                .await
+                    view_distance: *view_distance,
+                    reduce_debug: *reduce_debug,
+                    enable_respawn_screen: *enable_respawn_screen
+                })?;
+                writer.flush().await
             }
-            Self::PluginBrand { brand } => proto::play::write_plugin_brand(writer, brand).await,
+            Self::PluginBrand { brand } => {
+                writer.structure(&PlayResponse::Plugin {
+                    channel: "brand",
+                    data: brand.as_bytes()
+                })?;
+                writer.flush().await
+            },
             Self::HeldItemChange { slot } => {
-                proto::play::write_held_item_change(writer, *slot).await
-            }
-            Self::DeclareRecipes => proto::play::write_declare_recipes(writer).await,
-            Self::DeclareTags => proto::play::write_declare_tags(writer).await,
+                writer.structure(&PlayResponse::HeldItemChange {
+                    slot: *slot
+                })?;
+                writer.flush().await
+            },
             Self::ServerDifficulty {
                 difficulty,
                 difficulty_locked,
             } => {
-                proto::play::write_server_difficulty(
-                    writer,
-                    (*difficulty).into(),
-                    *difficulty_locked,
-                )
-                .await
+                writer.structure(&PlayResponse::ServerDifficulty {
+                    difficulty: (*difficulty).into(),
+                    difficulty_locked: *difficulty_locked
+                })?;
+                writer.flush().await
             }
             Self::PlayerPositionAndLook {
                 position,
@@ -87,14 +90,13 @@ impl ClientMessage {
                 flags,
                 teleport_id,
             } => {
-                proto::play::write_player_position_and_look(
-                    writer,
-                    &[position.x, position.y, position.z],
-                    &[look.x, look.y],
-                    *flags,
-                    *teleport_id,
-                )
-                .await
+                writer.structure(&PlayResponse::PlayerPositionAndLook {
+                    position: [position.x, position.y, position.z],
+                    look: [look.x, look.y],
+                    flags: *flags,
+                    teleport_id: *teleport_id
+                })?;
+                writer.flush().await
             }
             Self::ChunkData { position: _ } => Ok(()),
         }

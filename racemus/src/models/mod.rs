@@ -1,6 +1,6 @@
 mod chunk;
 pub use chunk::*;
-use racemus_proto::minecraft as proto;
+use racemus_binary::proto;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Difficulty {

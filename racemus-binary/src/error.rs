@@ -1,3 +1,5 @@
+use std::str::Utf8Error;
+
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
@@ -23,35 +25,33 @@ impl From<ErrorKind> for Error {
     }
 }
 
-impl<T: std::error::Error + 'static> From<Box<T>> for Error {
-    fn from(value: Box<T>) -> Self {
-        Self {
-            kind: ErrorKind::Error(value),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum ErrorKind {
-    Error(Box<dyn std::error::Error>),
     PendingInsertion,
     InvalidLengthPrefix,
     LengthTooLarge,
     ReadPastPacket,
     EndOfData,
-    InvalidVarint
+    InvalidVarint,
+    InvalidKey,
+    InvalidState(i32),
+    IOError(std::io::Error),
+    InvalidString(Utf8Error),
 }
 
 impl std::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
-            Self::Error(e) => write!(f, "{}", e),
             Self::PendingInsertion => write!(f, "an insertion was not completed"),
             Self::InvalidLengthPrefix => write!(f, "invalid length prefix"),
-            Self::LengthTooLarge => write!(f, "length would be too large"),
+            Self::LengthTooLarge => write!(f, "length prefix too large"),
             Self::ReadPastPacket => write!(f, "read past the end of a packet"),
             Self::EndOfData => write!(f, "end of data"),
             Self::InvalidVarint => write!(f, "invalid varint"),
+            Self::InvalidKey => write!(f, "invalid encryption key"),
+            Self::InvalidState(s) => write!(f, "invalid state: {}", s),
+            Self::IOError(e) => write!(f, "I/O error: {}", e),
+            Self::InvalidString(e) => write!(f, "invalid string: {}", e),
         }
     }
 }

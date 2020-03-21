@@ -181,7 +181,7 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             if let Some(range) = order {
                 match self.writer.write_all(&mut self.buffer[range.clone()]).await {
                     Ok(_) => (),
-                    Err(e) => return Err(Box::new(e).into()),
+                    Err(e) => return Err(ErrorKind::IOError(e).into()),
                 }
             } else {
                 return Err(ErrorKind::PendingInsertion.into());
@@ -240,7 +240,7 @@ mod tests {
     use cfb8::stream_cipher::NewStreamCipher;
 
     #[test]
-    pub fn test_binary_writer_insertions() -> Result<(), Error> {
+    pub fn binary_writer_insertions() -> Result<(), Error> {
         let mut writer = make_writer();
 
         let pre = writer.create_insertion();
@@ -256,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_binary_writer_encryption() -> Result<(), Error> {
+    pub fn binary_writer_encryption() -> Result<(), Error> {
         let mut writer = make_writer();
 
         writer.encrypt(
@@ -272,14 +272,14 @@ mod tests {
     }
 
     macro_rules! raw_write_tests {
-        ($($name:ident: $writer:ident => $expr:expr, $expected:expr),*) => {
+        ($($name:ident, $expected:expr, $writer:ident => $expr:expr;)*) => {
             $(
                 #[test]
                 fn $name() -> Result<(), Error> {
                     let mut $writer = make_writer();
                     $expr;
                     let buf = make_buffer($writer);
-                    assert_eq!(buf, $expected);
+                    assert_eq!(buf, include_bytes!($expected) as &[u8]);
                     Ok(())
                 }
             )*
@@ -287,72 +287,76 @@ mod tests {
     }
 
     raw_write_tests!(
-        test_fix_bool_true: w => w.fix_bool(true)?, b"\x01",
-        test_fix_bool_false: w => w.fix_bool(false)?, b"\x00",
+        binary_writer_fix_bool_true, "test-data/fix-bool-1.in", w => w
+            .fix_bool(false)?
+            .fix_bool(true)?;
 
-        test_binary_writer_fix_u8: w => w.fix_u8(0x15)?, b"\x15",
-        test_binary_writer_fix_u16: w => w.fix_u16(0x1526)?, b"\x15\x26",
-        test_binary_writer_fix_u32: w => w.fix_u32(0x1526_3749)?, b"\x15\x26\x37\x49",
-        test_binary_writer_fix_u64: w => w.fix_u64(0x1526_3749_5015_2637)?, b"\x15\x26\x37\x49\x50\x15\x26\x37",
+        binary_writer_fix_unsiged, "test-data/fix-unsigned-1.in", w => w
+            .fix_u8(0x15)?
+            .fix_u16(0x1526)?
+            .fix_u32(0x1526_3749)?
+            .fix_u64(0x1526_3749_5015_2637)?;
+        binary_writer_fix_signed, "test-data/fix-signed-1.in", w => w
+            .fix_i8(-0x15)?
+            .fix_i16(-0x1526)?
+            .fix_i32(-0x1526_3749)?
+            .fix_i64(-0x1526_3749_5015_2637)?;
+        binary_writer_fix_float, "test-data/fix-float-1.in", w => w
+            .fix_f32(std::f32::consts::E)?
+            .fix_f64(std::f64::consts::E)?;
 
-        test_binary_writer_fix_i8: w => w.fix_i8(-0x15)?, b"\xeb",
-        test_binary_writer_fix_i16: w => w.fix_i16(-0x1526)?, b"\xea\xda",
-        test_binary_writer_fix_i32: w => w.fix_i32(-0x1526_3749)?, b"\xea\xd9\xc8\xb7",
-        test_binary_writer_fix_i64: w => w.fix_i64(-0x1526_3749_5015_2637)?, b"\xea\xd9\xc8\xb6\xaf\xea\xd9\xc9",
+        // Test vectors based on: https://wiki.vg/Protocol#VarInt_and_VarLong
+        binary_writer_var_i16, "test-data/var-signed-16-1.in", w => w
+            .var_i16(0x0000)?
+            .var_i16(0x0001)?
+            .var_i16(0x0002)?
+            .var_i16(0x007f)?
+            .var_i16(0x00ff)?
+            .var_i16(0x7fff)?
+            .var_i16(-0x0001)?
+            .var_i16(-0x8000)?;
+        binary_writer_var_i32, "test-data/var-signed-32-1.in", w => w
+            .var_i32(0x0000_0000)?
+            .var_i32(0x0000_0001)?
+            .var_i32(0x0000_0002)?
+            .var_i32(0x0000_007f)?
+            .var_i32(0x0000_00ff)?
+            .var_i32(0x7fff_ffff)?
+            .var_i32(-0x0000_0001)?
+            .var_i32(-0x8000_0000)?;
+        binary_writer_var_i64, "test-data/var-signed-64-1.in", w => w
+            .var_i64(0x0000_0000_0000_0000)?
+            .var_i64(0x0000_0000_0000_0001)?
+            .var_i64(0x0000_0000_0000_0002)?
+            .var_i64(0x0000_0000_0000_007f)?
+            .var_i64(0x0000_0000_0000_00ff)?
+            .var_i64(0x7fff_ffff_ffff_ffff)?
+            .var_i64(-0x0000_0000_0000_0001)?
+            .var_i64(-0x8000_0000_0000_0000)?;
 
-        test_binary_writer_fix_f32: w => w.fix_f32(std::f32::consts::E)?, b"\x40\x2d\xf8\x54",
-        test_binary_writer_fix_f64: w => w.fix_f64(std::f64::consts::E)?, b"\x40\x05\xbf\x0a\x8b\x14\x57\x69",
-
-        // Test based on: https://wiki.vg/Protocol#VarInt_and_VarLong
-        test_binary_writer_var_i16_p_0000: w => w.var_i16(0x0000)?, b"\x00",
-        test_binary_writer_var_i16_p_0001: w => w.var_i16(0x0001)?, b"\x01",
-        test_binary_writer_var_i16_p_0002: w => w.var_i16(0x0002)?, b"\x02",
-        test_binary_writer_var_i16_p_007f: w => w.var_i16(0x007f)?, b"\x7f",
-        test_binary_writer_var_i16_p_00ff: w => w.var_i16(0x00ff)?, b"\xff\x01",
-        test_binary_writer_var_i16_p_7fff: w => w.var_i16(0x7fff)?, b"\xff\xff\x01",
-        test_binary_writer_var_i16_m_0001: w => w.var_i16(-0x0001)?, b"\xff\xff\x03",
-        test_binary_writer_var_i16_m_8000: w => w.var_i16(-0x8000)?, b"\x80\x80\x02",
-
-        test_binary_writer_var_i32_p_0000_0000: w => w.var_i32(0x0000_0000)?, b"\x00",
-        test_binary_writer_var_i32_p_0000_0001: w => w.var_i32(0x0000_0001)?, b"\x01",
-        test_binary_writer_var_i32_p_0000_0002: w => w.var_i32(0x0000_0002)?, b"\x02",
-        test_binary_writer_var_i32_p_0000_007f: w => w.var_i32(0x0000_007f)?, b"\x7f",
-        test_binary_writer_var_i32_p_0000_00ff: w => w.var_i32(0x0000_00ff)?, b"\xff\x01",
-        test_binary_writer_var_i32_p_7fff_ffff: w => w.var_i32(0x7fff_ffff)?, b"\xff\xff\xff\xff\x07",
-        test_binary_writer_var_i32_m_0000_0001: w => w.var_i32(-0x0000_0001)?, b"\xff\xff\xff\xff\x0f",
-        test_binary_writer_var_i32_m_8000_0000: w => w.var_i32(-0x8000_0000)?, b"\x80\x80\x80\x80\x08",
-
-        test_binary_writer_var_i64_p_0000_0000_0000_0000: w => w.var_i64(0x0000_0000_0000_0000)?, b"\x00",
-        test_binary_writer_var_i64_p_0000_0000_0000_0001: w => w.var_i64(0x0000_0000_0000_0001)?, b"\x01",
-        test_binary_writer_var_i64_p_0000_0000_0000_0002: w => w.var_i64(0x0000_0000_0000_0002)?, b"\x02",
-        test_binary_writer_var_i64_p_0000_0000_0000_007f: w => w.var_i64(0x0000_0000_0000_007f)?, b"\x7f",
-        test_binary_writer_var_i64_p_0000_0000_0000_00ff: w => w.var_i64(0x0000_0000_0000_00ff)?, b"\xff\x01",
-        test_binary_writer_var_i64_p_7fff_ffff_ffff_ffff: w => w.var_i64(0x7fff_ffff_ffff_ffff)?, b"\xff\xff\xff\xff\xff\xff\xff\xff\x7f",
-        test_binary_writer_var_i64_m_0000_0000_0000_0001: w => w.var_i64(-0x0000_0000_0000_0001)?, b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01",
-        test_binary_writer_var_i64_m_8000_0000_0000_0000: w => w.var_i64(-0x8000_0000_0000_0000)?, b"\x80\x80\x80\x80\x80\x80\x80\x80\x80\x01",
-
-        test_binary_writer_var_u16_0000: w => w.var_u16(0x0000)?, b"\x00",
-        test_binary_writer_var_u16_0001: w => w.var_u16(0x0001)?, b"\x01",
-        test_binary_writer_var_u16_0002: w => w.var_u16(0x0002)?, b"\x02",
-        test_binary_writer_var_u16_007f: w => w.var_u16(0x007f)?, b"\x7f",
-        test_binary_writer_var_u16_00ff: w => w.var_u16(0x00ff)?, b"\xff\x01",
-        test_binary_writer_var_u16_7fff: w => w.var_u16(0x7fff)?, b"\xff\xff\x01",
-        test_binary_writer_var_u16_ffff: w => w.var_u16(0xffff)?, b"\xff\xff\x03",
-
-        test_binary_writer_var_u32_0000_0000: w => w.var_u32(0x0000_0000)?, b"\x00",
-        test_binary_writer_var_u32_0000_0001: w => w.var_u32(0x0000_0001)?, b"\x01",
-        test_binary_writer_var_u32_0000_0002: w => w.var_u32(0x0000_0002)?, b"\x02",
-        test_binary_writer_var_u32_0000_007f: w => w.var_u32(0x0000_007f)?, b"\x7f",
-        test_binary_writer_var_u32_0000_00ff: w => w.var_u32(0x0000_00ff)?, b"\xff\x01",
-        test_binary_writer_var_u32_7fff_ffff: w => w.var_u32(0x7fff_ffff)?, b"\xff\xff\xff\xff\x07",
-        test_binary_writer_var_u32_ffff_ffff: w => w.var_u32(0xffff_ffff)?, b"\xff\xff\xff\xff\x0f",
-
-        test_binary_writer_var_u64_0000_0000_0000_0000: w => w.var_u64(0x0000_0000_0000_0000)?, b"\x00",
-        test_binary_writer_var_u64_0000_0000_0000_0001: w => w.var_u64(0x0000_0000_0000_0001)?, b"\x01",
-        test_binary_writer_var_u64_0000_0000_0000_0002: w => w.var_u64(0x0000_0000_0000_0002)?, b"\x02",
-        test_binary_writer_var_u64_0000_0000_0000_007f: w => w.var_u64(0x0000_0000_0000_007f)?, b"\x7f",
-        test_binary_writer_var_u64_0000_0000_0000_00ff: w => w.var_u64(0x0000_0000_0000_00ff)?, b"\xff\x01",
-        test_binary_writer_var_u64_7fff_ffff_ffff_ffff: w => w.var_u64(0x7fff_ffff_ffff_ffff)?, b"\xff\xff\xff\xff\xff\xff\xff\xff\x7f",
-        test_binary_writer_var_u64_ffff_ffff_ffff_ffff: w => w.var_u64(0xffff_ffff_ffff_ffff)?, b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01"
+        binary_writer_var_u16, "test-data/var-unsigned-16-1.in", w => w
+            .var_u16(0x0000)?
+            .var_u16(0x0001)?
+            .var_u16(0x0002)?
+            .var_u16(0x007f)?
+            .var_u16(0x00ff)?
+            .var_u16(0x7fff)?
+            .var_u16(0xffff)?;
+        binary_writer_var_u32, "test-data/var-unsigned-32-1.in", w => w
+            .var_u32(0x0000_0000)?
+            .var_u32(0x0000_0001)?
+            .var_u32(0x0000_0002)?
+            .var_u32(0x0000_007f)?
+            .var_u32(0x0000_00ff)?
+            .var_u32(0x7fff_ffff)?
+            .var_u32(0xffff_ffff)?;
+        binary_writer_var_u64, "test-data/var-unsigned-64-1.in", w => w
+            .var_u64(0x0000_0000_0000_0000)?
+            .var_u64(0x0000_0000_0000_0001)?
+            .var_u64(0x0000_0000_0000_0002)?
+            .var_u64(0x0000_0000_0000_007f)?
+            .var_u64(0x0000_0000_0000_00ff)?
+            .var_u64(0x7fff_ffff_ffff_ffff)?
+            .var_u64(0xffff_ffff_ffff_ffff)?;
     );
 }

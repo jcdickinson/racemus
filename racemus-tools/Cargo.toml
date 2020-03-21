@@ -8,4 +8,7 @@ edition = "2018"
 num = "0.2.1"
 ring = "0.16.11"
 untrusted = "0.7.0"
-async-std = "1.5"
+
+[dependencies.async-std]
+version = "1.5"
+features = ["unstable"]

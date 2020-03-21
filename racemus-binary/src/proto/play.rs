@@ -1,7 +1,7 @@
-use crate::{writer::StructuredWriter, BinaryWriter};
-use async_std::io::Write;
+use crate::{writer::StructuredWriter, BinaryWriter, Error, BinaryReader};
+use async_std::io::{Read, Write};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameModeKind {
     Survival,
     Creative,
@@ -20,7 +20,7 @@ impl From<GameModeKind> for u8 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameMode {
     Softcore(GameModeKind),
     Hardcore(GameModeKind),
@@ -38,7 +38,7 @@ impl From<GameMode> for u8 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Difficulty {
     Peaceful,
     Easy,
@@ -57,6 +57,23 @@ impl From<Difficulty> for u8 {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlayRequest {
+    Unknown {
+        packet_id: i32,
+    },
+}
+
+impl<R: Read + Unpin> BinaryReader<R> {
+    pub async fn read_play(&mut self) -> Result<PlayRequest, Error> {
+        let packet_id = self.packet_header().await?;
+        match packet_id {
+            _ => Ok(PlayRequest::Unknown { packet_id }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlayResponse<'a> {
     ServerDifficulty {
         // 0x0e
@@ -97,7 +114,7 @@ pub enum PlayResponse<'a> {
 }
 
 impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWriter<W> {
-    fn structure(&mut self, val: &PlayResponse<'a>) -> Result<&mut Self, crate::Error> {
+    fn structure(&mut self, val: &PlayResponse<'a>) -> Result<&mut Self, Error> {
         let insertion = self.create_insertion();
         match val {
             PlayResponse::ServerDifficulty {
@@ -154,17 +171,17 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWrite
 #[cfg(test)]
 mod tests {
     use super::{PlayResponse::*, *};
-    use crate::{tests::*, Error};
+    use crate::tests::*;
 
     macro_rules! raw_write_tests {
-        ($($name:ident: $writer:ident => $expr:expr, $expected:expr),*) => {
+        ($($name:ident, $expected:expr, $writer:ident => $expr:expr;)*) => {
             $(
                 #[test]
                 fn $name() -> Result<(), Error> {
                     let mut $writer = make_writer();
                     $expr;
                     let buf = make_buffer($writer);
-                    assert_eq!(buf, $expected);
+                    assert_eq!(buf, include_bytes!($expected) as &[u8]);
                     Ok(())
                 }
             )*
@@ -172,7 +189,7 @@ mod tests {
     }
 
     raw_write_tests!(
-        test_write_play_join_game: w => w.structure(&JoinGame{
+        binary_writer_play_join_game, "test-data/play-join-game-1.in", w => w.structure(&JoinGame{
             entity_id: 0x1526_3749,
             game_mode: GameMode::Hardcore(GameModeKind::Adventure),
             dimension: -1,
@@ -181,20 +198,20 @@ mod tests {
             view_distance: 28,
             reduce_debug: true,
             enable_respawn_screen: false,
-        })?, b"\x1e\x26\x15\x26\x37\x49\x0a\xff\xff\xff\xff\x15\x26\x37\x49\x50\x15\x26\x37\x00\x07default\x1c\x01\x00",
-        test_write_held_item_change: w => w.structure(&HeldItemChange{
+        })?;
+        binary_writer_play_held_item_change, "test-data/play-held-item-change-1.in", w => w.structure(&HeldItemChange{
             slot: 0x48
-        })?, b"\x02\x40\x48",
-        test_write_plugin: w => w.structure(&Plugin{
+        })?;
+        binary_writer_play_plugin, "test-data/play-plugin-1.in", w => w.structure(&Plugin{
             channel: "brand",
             data: b"1234"
-        })?, b"\x0c\x19\x05brand\x041234",
-        test_write_server_difficulty: w => w.structure(&ServerDifficulty{
+        })?;
+        binary_writer_play_server_difficulty, "test-data/play-server-difficulty-1.in", w => w.structure(&ServerDifficulty{
             difficulty: Difficulty::Medium,
             difficulty_locked: true
-        })?, b"\x03\x0e\x02\x01",
-        test_write_disconnect: w => w.structure(&Disconnect{
+        })?;
+        binary_writer_play_disconnect, "test-data/play-disconnect-1.in", w => w.structure(&Disconnect{
             reason: "kicked"
-        })?, b"\x08\x1b\x06kicked"
+        })?;
     );
 }

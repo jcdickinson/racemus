@@ -9,19 +9,19 @@ use std::{collections::HashMap, sync::Arc};
 
 pub enum Message {
     ConnectionOpened {
-        player_uuid: Arc<Box<str>>,
-        player_name: Arc<Box<str>>,
+        player_uuid: Arc<str>,
+        player_name: Arc<str>,
         sender: Sender<crate::connection::ClientMessage>,
     },
     ConnectionClosed {
-        player_uuid: Arc<Box<str>>,
+        player_uuid: Arc<str>,
     },
 }
 
 pub struct Controller {
     controllers: super::Controllers,
     receiver: Receiver<Message>,
-    players: HashMap<Arc<Box<str>>, Player>,
+    players: HashMap<Arc<str>, Player>,
 }
 
 impl Controller {
@@ -120,8 +120,7 @@ impl Controller {
 }
 
 struct Player {
-    uuid: Arc<Box<str>>,
-    //name: Arc<Box<str>>,
+    uuid: Arc<str>,
     sender: Sender<crate::connection::ClientMessage>,
     entity_id: EntityId,
 
@@ -134,8 +133,8 @@ struct Player {
 
 impl Player {
     pub fn new(
-        uuid: Arc<Box<str>>,
-        _name: Arc<Box<str>>,
+        uuid: Arc<str>,
+        _name: Arc<str>,
         sender: Sender<crate::connection::ClientMessage>,
         config: &crate::config::Config,
     ) -> Self {

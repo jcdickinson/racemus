@@ -1,8 +1,8 @@
 mod models;
 pub use models::*;
 
+use racemus_binary::{proto::*, *};
 use racemus_mc::{api::session::has_joined, chat};
-use racemus_proto::{minecraft::*, AesCfb8, PacketReader, PacketWriter};
 use racemus_tools::crypto::insecure::InsecurePrivateKey;
 
 use crate::controllers::{player, Controllers};
@@ -13,7 +13,6 @@ use async_std::{
 use log::{error, info, trace};
 use rand::{self, RngCore};
 use std::{error::Error, net::SocketAddr, sync::Arc};
-use stream_cipher::NewStreamCipher;
 
 #[derive(Debug)]
 pub enum ConnectionError {
@@ -49,11 +48,11 @@ pub struct Connection<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send 
     key: Box<InsecurePrivateKey>,
     state: ConnectionState,
     addr: SocketAddr,
-    player_uuid: Option<Arc<Box<str>>>,
-    player_name: Option<Arc<Box<str>>>,
+    player_uuid: Option<Arc<str>>,
+    player_name: Option<Arc<str>>,
     verify: Option<Vec<u8>>,
-    reader: PacketReader<R>,
-    writer: PacketWriter<W>,
+    reader: BinaryReader<R>,
+    writer: BinaryWriter<W>,
     recv: Option<Receiver<ClientMessage>>,
     version: Option<i32>,
     controllers: Controllers,
@@ -94,8 +93,8 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
         key: InsecurePrivateKey,
         controllers: Controllers,
     ) -> Self {
-        let writer = PacketWriter::new(writer);
-        let reader = PacketReader::new(reader);
+        let writer = BinaryWriter::new(writer);
+        let reader = BinaryReader::new(reader);
         Self {
             addr,
             reader,
@@ -138,7 +137,8 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
     }
 
     async fn disconnect_client(&mut self, reason: String) {
-        if let Ok(chat) = chat::trivial(&reason) {
+        if let Ok(reason) = chat::trivial(&reason) {
+            let reason = &reason;
             let _ = match self.state {
                 ConnectionState::RunningGame => {
                     if let Some(player_uuid) = std::mem::replace(&mut self.player_uuid, None) {
@@ -146,53 +146,62 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                             .send_player(player::Message::ConnectionClosed { player_uuid })
                             .await;
                     }
-                    play::write_disconnect(&mut self.writer, &chat).await
+                    let _ = self.writer.structure(&PlayResponse::Disconnect { reason });
+                    self.writer.flush().await
                 }
-                _ => login::write_disconnect(&mut self.writer, &chat).await,
+                _ => {
+                    let _ = self.writer.structure(&LoginResponse::Disconnect { reason });
+                    self.writer.flush().await
+                }
             };
         }
     }
 
     async fn execute_open(&mut self) -> Result<(), Box<dyn Error>> {
-        match open::read_packet(&mut self.reader).await? {
-            open::Packet::Handshake(handshake) => match handshake.next_state() {
-                open::RequestedState::Login => {
+        match self.reader.read_open().await? {
+            OpenRequest::Handshake {
+                address: _,
+                port: _,
+                version,
+                next_state,
+            } => match next_state {
+                RequestedState::Login => {
                     trace!("{} request to transition to login state", self);
-                    self.version = Some(handshake.version());
+                    self.version = Some(version);
                     self.state = ConnectionState::AwaitingLogin;
                     Ok(())
                 }
-                open::RequestedState::Status => {
+                RequestedState::Status => {
                     trace!("{} request to transition to status state", self);
                     self.state = ConnectionState::AwaitingStatusRequest;
                     Ok(())
                 }
             },
+            _ => Err(ConnectionError::InvalidTransition.into()),
         }
     }
     async fn execute_status_request(&mut self) -> Result<(), Box<dyn Error>> {
-        match status::read_packet(&mut self.reader).await? {
-            status::Packet::Request => {
+        match self.reader.read_status().await? {
+            StatusRequest::InfoRequest => {
                 trace!("{} request for server status", self);
-                status::write_response(
-                    &mut self.writer,
-                    &self.controllers.config().network().motd(),
-                    self.controllers.config().game().max_players(),
-                )
-                .await?;
+                self.writer.structure(&StatusResponse::InfoResponse {
+                    max_players: self.controllers.config().game().max_players(),
+                    current_players: 0,
+                    description: &self.controllers.config().network().motd(),
+                })?;
+                self.writer.flush().await?;
                 self.state = ConnectionState::AwaitingStatusPing;
-
                 Ok(())
             }
             _ => Err(ConnectionError::InvalidTransition.into()),
         }
     }
     async fn execute_status_ping(&mut self) -> Result<(), Box<dyn Error>> {
-        match status::read_packet(&mut self.reader).await? {
-            status::Packet::Ping(ping) => {
+        match self.reader.read_status().await? {
+            StatusRequest::Ping { timestamp } => {
                 trace!("{} request for ping", self);
-                status::write_pong(&mut self.writer, ping.timestamp()).await?;
-
+                self.writer.structure(&StatusResponse::Pong { timestamp })?;
+                self.writer.flush().await?;
                 Ok(())
             }
             _ => Err(ConnectionError::InvalidTransition.into()),
@@ -200,19 +209,22 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
     }
 
     async fn execute_login(&mut self) -> Result<(), Box<dyn Error>> {
-        match login::read_packet(&mut self.reader).await? {
-            login::Packet::LoginStart(login) => {
-                trace!("{} request to login as: {}", self, login.player_name());
+        match self.reader.read_login().await? {
+            LoginRequest::Start{player_name} => {
+                trace!("{} request to login as: {}", self, player_name);
                 match self.version {
-                    Some(racemus_proto::SERVER_VERSION_NUMBER) => {}
+                    Some(racemus_binary::SERVER_VERSION_NUMBER) => {}
                     Some(_) => return Err(ConnectionError::UnsupportedVersion.into()),
                     None => return Err(ConnectionError::InvalidTransition.into()),
                 };
                 let mut verify = vec![0u8; 16];
                 rand::thread_rng().fill_bytes(&mut verify);
-                login::write_encryption_request(&mut self.writer, self.key.public_der(), &verify)
-                    .await?;
-                self.player_uuid = Some(login.player_name().clone());
+                self.writer.structure(&LoginResponse::EncryptionRequest {
+                    public_key: self.key.public_der(),
+                    verify_token: &verify
+                })?;
+                self.writer.flush().await?;
+                self.player_uuid = Some(player_name);
                 self.verify = Some(verify);
                 self.state = ConnectionState::AwaitingEncryptionResponse;
 
@@ -223,8 +235,11 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
     }
 
     async fn execute_encryption_response(&mut self) -> Result<(), Box<dyn Error>> {
-        match login::read_packet(&mut self.reader).await? {
-            login::Packet::EncryptionResponse(enc) => {
+        match self.reader.read_login().await? {
+            LoginRequest::EncryptionResponse {
+                encrypted_shared_secret,
+                encrypted_verifier,
+            } => {
                 trace!("{} encryption response received", self);
                 let player_name = if let Some(player_name) = &self.player_uuid {
                     player_name
@@ -239,12 +254,12 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
 
                 const KEY_SIZE: usize = 16;
 
-                let incoming_verify = self.key.decrypt(enc.encrypted_verifier());
+                let incoming_verify = self.key.decrypt(&encrypted_verifier);
                 if incoming_verify.len() < verify.len() {
                     return Err(ConnectionError::InvalidVerifier.into());
                 }
 
-                if enc.encrypted_shared_secret().len() < KEY_SIZE {
+                if encrypted_shared_secret.len() < KEY_SIZE {
                     return Err(ConnectionError::InvalidKey.into());
                 }
 
@@ -256,7 +271,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 }
 
                 trace!("{} verifier validated", self);
-                let key = self.key.decrypt(enc.encrypted_shared_secret());
+                let key = self.key.decrypt(&encrypted_shared_secret);
                 let padding = key.len() - KEY_SIZE;
                 let key = &key[padding..];
 
@@ -280,24 +295,17 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     player_info.uuid()
                 );
 
-                let aes_out = match AesCfb8::new_var(&key, &key) {
-                    Ok(r) => r,
-                    Err(_) => return Err(ConnectionError::InvalidKey.into()),
-                };
-                let aes_in = match AesCfb8::new_var(&key, &key) {
-                    Ok(r) => r,
-                    Err(_) => return Err(ConnectionError::InvalidKey.into()),
-                };
+                let aes_out = racemus_binary::create_aes_cfb8(&key, &key)?;
+                let aes_in = racemus_binary::create_aes_cfb8(&key, &key)?;
 
                 self.writer.encrypt(aes_out);
                 self.reader.decrypt(aes_in);
 
-                login::write_login_success(
-                    &mut self.writer,
-                    &player_info.uuid(),
-                    &player_info.name(),
-                )
-                .await?;
+                self.writer.structure(&LoginResponse::Success {
+                    player_uuid: &player_info.uuid(),
+                    player_name: &player_info.name(),
+                })?;
+                self.writer.flush().await?;
 
                 info!(
                     "{} player {} connected with uuid {}",
@@ -305,12 +313,12 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     player_info.name(),
                     player_info.uuid()
                 );
+                
+                let player_uuid: Arc<str> = player_info.uuid().into();
+                let player_name: Arc<str> = player_info.name().into();
 
-                let player_uuid = Arc::new(player_info.uuid().into());
-                let player_name = Arc::new(player_info.name().into());
-
-                self.player_uuid = Some(Arc::clone(&player_uuid));
-                self.player_name = Some(Arc::clone(&player_name));
+                self.player_uuid = Some(player_uuid.clone());
+                self.player_name = Some(player_name.clone());
                 self.state = ConnectionState::RunningGame;
 
                 let (sender, rx) = async_std::sync::channel(10);

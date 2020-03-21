@@ -39,19 +39,9 @@ macro_rules! build_read_fixnum {
         #[allow(dead_code)]
         pub(crate) async fn $name(&mut self) -> Result<$type, Error> {
             const SIZE: usize = std::mem::size_of::<$type>();
-            if let Some(current_len) = self.current_len {
-                if current_len < SIZE {
-                    return Err(ErrorKind::ReadPastPacket.into());
-                }
-            }
-            if self.buffer.available_data() < SIZE {
-                self.fill(SIZE).await?
-            }
-            let result = <$type>::from_be_bytes(self.buffer.data()[0..SIZE].try_into().unwrap());
-            if let Some(current_len) = self.current_len.as_mut() {
-                *current_len -= SIZE;
-            }
-            self.buffer.consume(SIZE);
+            let data = self.data(SIZE).await?;
+            let result = <$type>::from_be_bytes(data.try_into().unwrap());
+            self.consume(SIZE);
             Ok(result)
         }
     };
@@ -62,6 +52,8 @@ impl<R: Read + Unpin> BinaryReader<R> {
     const BUFFER_INIT: usize = 1024;
     #[cfg(not(test))]
     const BUFFER_GROW: usize = 4096;
+    // Small values are intentionally used in tests to ensure that
+    // streaming is working
     #[cfg(test)]
     const BUFFER_INIT: usize = 1;
     #[cfg(test)]
@@ -79,30 +71,54 @@ impl<R: Read + Unpin> BinaryReader<R> {
     pub fn decrypt(&mut self, cipher: AesCfb8) -> &mut Self {
         // We don't need to decrypt the data retroactively because the
         // encryption negotiation is lock-step. This is fortunate because
-        // circular won't allow you to edit data that is already committed.
+        // circular wouldn't allow us to edit committed data anyway.
         self.cipher = Some(cipher);
         self
     }
 
     #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn current_len(&self) -> Option<usize> {
-        self.current_len
+    pub(crate) fn validate_length(&self, count: usize) -> Result<(), Error> {
+        if let Some(current_len) = self.current_len {
+            if current_len < count {
+                return Err(ErrorKind::ReadPastPacket.into());
+            }
+        }
+        Ok(())
     }
 
-    pub(crate) async fn fill(&mut self, size: usize) -> Result<(), Error> {
-        if size > self.buffer.available_space() {
-            let size = size - self.buffer.available_data();
-            // Size it to BUFFER_GROW increments
-            let size = (size + Self::BUFFER_GROW - 1) / Self::BUFFER_GROW;
-            let size = size * Self::BUFFER_GROW;
-
-            self.buffer.grow(size);
+    #[inline]
+    pub(crate) fn consume(&mut self, count: usize) {
+        if let Some(current_len) = self.current_len.as_mut() {
+            *current_len -= count;
         }
-        while self.buffer.available_data() < size {
+        self.buffer.consume_noshift(count);
+    }
+
+    #[inline]
+    pub(crate) async fn data(&mut self, count: usize) -> Result<&[u8], Error> {
+        self.validate_length(count)?;
+        if self.buffer.available_data() < count {
+            self.fill(count).await?
+        }
+        Ok(&self.buffer.data()[0..count])
+    }
+
+    async fn fill(&mut self, count: usize) -> Result<(), Error> {
+        if count > self.buffer.available_space() {
+            self.buffer.shift();
+            if count > self.buffer.available_space() {
+                let grow = count;
+                // Size it to BUFFER_GROW increments
+                let grow = (grow + Self::BUFFER_GROW - 1) / Self::BUFFER_GROW;
+                let grow = grow * Self::BUFFER_GROW;
+
+                self.buffer.grow(grow);
+            }
+        }
+        while self.buffer.available_data() < count {
             let n = match self.reader.read(&mut self.buffer.space()).await {
                 Ok(r) => r,
-                Err(e) => return Err(Box::new(e).into()),
+                Err(e) => return Err(ErrorKind::IOError(e).into()),
             };
             if n == 0 {
                 return Err(ErrorKind::EndOfData.into());
@@ -116,7 +132,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
         Ok(())
     }
 
-    async fn consume_remainder(&mut self) -> Result<(), Error> {
+    pub(crate) async fn consume_remainder(&mut self) -> Result<(), Error> {
         if let Some(current_len) = self.current_len.as_mut() {
             if *current_len != 0 {
                 let remove = std::cmp::min(*current_len, self.buffer.available_data());
@@ -127,7 +143,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
                     let remove = std::cmp::min(*current_len, self.buffer.available_space());
                     let remove = match self.reader.read(&mut self.buffer.space()[0..remove]).await {
                         Ok(r) => r,
-                        Err(e) => return Err(Box::new(e).into()),
+                        Err(e) => return Err(ErrorKind::IOError(e).into()),
                     };
                     if remove == 0 {
                         return Err(ErrorKind::EndOfData.into());
@@ -140,14 +156,8 @@ impl<R: Read + Unpin> BinaryReader<R> {
     }
 
     #[inline]
-    #[allow(dead_code)]
-    pub(crate) async fn with_size(
-        &mut self,
-        size: Option<usize>,
-    ) -> Result<(), Error> {
-        self.consume_remainder().await?;
-        self.current_len = size;
-        Ok(())
+    pub(crate) fn with_size(&mut self, count: Option<usize>) {
+        self.current_len = count;
     }
 
     build_read_fixnum!(fix_i8, i8);
@@ -158,7 +168,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
     build_read_varint!(var_u16, u16);
     build_read_varint!(var_u32, u32);
     build_read_varint!(var_u64, u64);
-    
+
     build_read_varint!(var_i16, i16);
     build_read_varint!(var_i32, i32);
     build_read_varint!(var_i64, i64);
@@ -179,7 +189,7 @@ mod tests {
     use cfb8::stream_cipher::NewStreamCipher;
 
     #[test]
-    pub fn test_binary_reader_encryption() -> Result<(), Error> {
+    pub fn binary_reader_encryption() -> Result<(), Error> {
         let mut reader = make_reader(b"\x2f\x57\xb5\x42");
 
         reader.decrypt(
@@ -195,12 +205,47 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    pub fn binary_reader_with_size_read_incomplete() -> Result<(), Error> {
+        let mut reader = make_reader(b"1234\x15\x26");
+
+        reader.with_size(Some(4));
+        // Value is expected to be skipped
+        block_on(reader.consume_remainder())?;
+
+        reader.with_size(Some(1));
+        assert_eq!(block_on(reader.fix_u8())?, 0x15);
+        block_on(reader.consume_remainder())?;
+
+        reader.with_size(Some(1));
+        assert_eq!(block_on(reader.fix_u8())?, 0x26);
+        block_on(reader.consume_remainder())?;
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn binary_reader_with_size_readpast() -> Result<(), Error> {
+        let mut reader = make_reader(b"\x15\x26");
+
+        reader.with_size(Some(1));
+        match block_on(reader.data(2)) {
+            Ok(_) => panic!("expected error"),
+            Err(e) => match e.kind() {
+                ErrorKind::ReadPastPacket => {}
+                _ => return Err(e),
+            },
+        }
+
+        Ok(())
+    }
+
     macro_rules! raw_read_tests {
-        ($($name:ident, $input:literal: $reader:ident => { $($expr:expr, $expected:expr),* }),*) => {
+        ($($name:ident, $input:expr, $reader:ident => { $($expr:expr, $expected:expr;)* };)*) => {
             $(
                 #[test]
                 pub fn $name() -> Result<(), Error> {
-                    let mut $reader = make_reader($input as &[u8]);
+                    let mut $reader = make_reader(include_bytes!($input) as &[u8]);
                     $({
                         assert_eq!(block_on($expr)?, $expected);
                     })*
@@ -211,78 +256,78 @@ mod tests {
     }
 
     raw_read_tests!(
-        read_fix_u, b"\x15\x15\x26\x15\x26\x37\x49\x15\x26\x37\x49\x50\x15\x26\x37": r => {
-            r.fix_u8(), 0x15,
-            r.fix_u16(), 0x1526,
-            r.fix_u32(), 0x1526_3749,
-            r.fix_u64(), 0x1526_3749_5015_2637
-        },
-        read_fix_i, b"\xeb\xea\xda\xea\xd9\xc8\xb7\xea\xd9\xc8\xb6\xaf\xea\xd9\xc9": r => {
-            r.fix_i8(), -0x15,
-            r.fix_i16(), -0x1526,
-            r.fix_i32(), -0x1526_3749,
-            r.fix_i64(), -0x1526_3749_5015_2637
-        },
-        read_fix_f, b"\x40\x2d\xf8\x54\x40\x05\xbf\x0a\x8b\x14\x57\x69": r => {
-            r.fix_f32(), std::f32::consts::E,
-            r.fix_f64(), std::f64::consts::E
-        },
-        read_var_i16, b"\x00\x01\x02\x7f\xff\x01\xff\xff\x01\xff\xff\x03\x80\x80\x02": r => {
-            r.var_i16(), 0x0000,
-            r.var_i16(), 0x0001,
-            r.var_i16(), 0x0002,
-            r.var_i16(), 0x007f,
-            r.var_i16(), 0x00ff,
-            r.var_i16(), 0x7fff,
-            r.var_i16(), -0x0001,
-            r.var_i16(), -0x8000
-        },
-        read_var_i32, b"\x00\x01\x02\x7f\xff\x01\xff\xff\xff\xff\x07\xff\xff\xff\xff\x0f\x80\x80\x80\x80\x08": r => {
-            r.var_i32(), 0x0000_0000,
-            r.var_i32(), 0x0000_0001,
-            r.var_i32(), 0x0000_0002,
-            r.var_i32(), 0x0000_007f,
-            r.var_i32(), 0x0000_00ff,
-            r.var_i32(), 0x7fff_ffff,
-            r.var_i32(), -0x0000_0001,
-            r.var_i32(), -0x8000_0000
-        },
-        read_var_i64, b"\x00\x01\x02\x7f\xff\x01\xff\xff\xff\xff\xff\xff\xff\xff\x7f\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x80\x80\x80\x80\x80\x80\x80\x80\x80\x01": r => {
-            r.var_i64(), 0x0000_0000_0000_0000,
-            r.var_i64(), 0x0000_0000_0000_0001,
-            r.var_i64(), 0x0000_0000_0000_0002,
-            r.var_i64(), 0x0000_0000_0000_007f,
-            r.var_i64(), 0x0000_0000_0000_00ff,
-            r.var_i64(), 0x7fff_ffff_ffff_ffff,
-            r.var_i64(), -0x0000_0000_0000_0001,
-            r.var_i64(), -0x8000_0000_0000_0000
-        },
-        read_var_u16, b"\x00\x01\x02\x7f\xff\x01\xff\xff\x01\xff\xff\x03": r => {
-            r.var_u16(), 0x0000,
-            r.var_u16(), 0x0001,
-            r.var_u16(), 0x0002,
-            r.var_u16(), 0x007f,
-            r.var_u16(), 0x00ff,
-            r.var_u16(), 0x7fff,
-            r.var_u16(), 0xffff
-        },
-        read_var_u32, b"\x00\x01\x02\x7f\xff\x01\xff\xff\xff\xff\x07\xff\xff\xff\xff\x0f": r => {
-            r.var_u32(), 0x0000_0000,
-            r.var_u32(), 0x0000_0001,
-            r.var_u32(), 0x0000_0002,
-            r.var_u32(), 0x0000_007f,
-            r.var_u32(), 0x0000_00ff,
-            r.var_u32(), 0x7fff_ffff,
-            r.var_u32(), 0xffff_ffff
-        },
-        read_var_u64, b"\x00\x01\x02\x7f\xff\x01\xff\xff\xff\xff\xff\xff\xff\xff\x7f\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01": r => {
-            r.var_u64(), 0x0000_0000_0000_0000,
-            r.var_u64(), 0x0000_0000_0000_0001,
-            r.var_u64(), 0x0000_0000_0000_0002,
-            r.var_u64(), 0x0000_0000_0000_007f,
-            r.var_u64(), 0x0000_0000_0000_00ff,
-            r.var_u64(), 0x7fff_ffff_ffff_ffff,
-            r.var_u64(), 0xffff_ffff_ffff_ffff
-        }
+        binary_reader_fix_unsigned, "test-data/fix-unsigned-1.in", r => {
+            r.fix_u8(), 0x15;
+            r.fix_u16(), 0x1526;
+            r.fix_u32(), 0x1526_3749;
+            r.fix_u64(), 0x1526_3749_5015_2637;
+        };
+        binary_reader_fix_signed, "test-data/fix-signed-1.in", r => {
+            r.fix_i8(), -0x15;
+            r.fix_i16(), -0x1526;
+            r.fix_i32(), -0x1526_3749;
+            r.fix_i64(), -0x1526_3749_5015_2637;
+        };
+        binary_reader_fix_float, "test-data/fix-float-1.in", r => {
+            r.fix_f32(), std::f32::consts::E;
+            r.fix_f64(), std::f64::consts::E;
+        };
+        binary_reader_var_i16, "test-data/var-signed-16-1.in", r => {
+            r.var_i16(), 0x0000;
+            r.var_i16(), 0x0001;
+            r.var_i16(), 0x0002;
+            r.var_i16(), 0x007f;
+            r.var_i16(), 0x00ff;
+            r.var_i16(), 0x7fff;
+            r.var_i16(), -0x0001;
+            r.var_i16(), -0x8000;
+        };
+        binary_reader_var_i32, "test-data/var-signed-32-1.in", r => {
+            r.var_i32(), 0x0000_0000;
+            r.var_i32(), 0x0000_0001;
+            r.var_i32(), 0x0000_0002;
+            r.var_i32(), 0x0000_007f;
+            r.var_i32(), 0x0000_00ff;
+            r.var_i32(), 0x7fff_ffff;
+            r.var_i32(), -0x0000_0001;
+            r.var_i32(), -0x8000_0000;
+        };
+        binary_reader_var_i64, "test-data/var-signed-64-1.in", r => {
+            r.var_i64(), 0x0000_0000_0000_0000;
+            r.var_i64(), 0x0000_0000_0000_0001;
+            r.var_i64(), 0x0000_0000_0000_0002;
+            r.var_i64(), 0x0000_0000_0000_007f;
+            r.var_i64(), 0x0000_0000_0000_00ff;
+            r.var_i64(), 0x7fff_ffff_ffff_ffff;
+            r.var_i64(), -0x0000_0000_0000_0001;
+            r.var_i64(), -0x8000_0000_0000_0000;
+        };
+        binary_reader_var_u16, "test-data/var-unsigned-16-1.in", r => {
+            r.var_u16(), 0x0000;
+            r.var_u16(), 0x0001;
+            r.var_u16(), 0x0002;
+            r.var_u16(), 0x007f;
+            r.var_u16(), 0x00ff;
+            r.var_u16(), 0x7fff;
+            r.var_u16(), 0xffff;
+        };
+        binary_reader_var_u32, "test-data/var-unsigned-32-1.in", r => {
+            r.var_u32(), 0x0000_0000;
+            r.var_u32(), 0x0000_0001;
+            r.var_u32(), 0x0000_0002;
+            r.var_u32(), 0x0000_007f;
+            r.var_u32(), 0x0000_00ff;
+            r.var_u32(), 0x7fff_ffff;
+            r.var_u32(), 0xffff_ffff;
+        };
+        binary_reader_var_u64, "test-data/var-unsigned-64-1.in", r => {
+            r.var_u64(), 0x0000_0000_0000_0000;
+            r.var_u64(), 0x0000_0000_0000_0001;
+            r.var_u64(), 0x0000_0000_0000_0002;
+            r.var_u64(), 0x0000_0000_0000_007f;
+            r.var_u64(), 0x0000_0000_0000_00ff;
+            r.var_u64(), 0x7fff_ffff_ffff_ffff;
+            r.var_u64(), 0xffff_ffff_ffff_ffff;
+        };
     );
 }
