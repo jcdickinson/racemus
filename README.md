@@ -1,4 +1,5 @@
 # Racemus
+[![Coverage Status](https://coveralls.io/repos/github/jcdickinson/racemus/badge.svg)](https://coveralls.io/github/jcdickinson/racemus)
 
 Racemus is an experimental Minecraft server.
 

@@ -6,3 +6,4 @@ output-file: ./lcov.info
 source-dir: .
 ignore:
   - "../*"
+  - "/usr/share/rust/*"
