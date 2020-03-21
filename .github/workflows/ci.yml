@@ -50,7 +50,7 @@ jobs:
         with:
           coveralls-token: ${{ secrets.COVERALLS_TOKEN }}
 
-     - name: Coveralls upload
+      - name: Coveralls upload
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
