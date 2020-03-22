@@ -43,6 +43,14 @@ jobs:
           toolchain: nightly
           override: true
 
+      - name: Build Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --no-run
+        env:
+          CARGO_INCREMENTAL: 0
+
       - name: Run Tests
         uses: actions-rs/cargo@v1
         with:
@@ -64,6 +72,15 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+
+      - name: Build Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --no-run
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
 
       - name: Run Tests
         uses: actions-rs/cargo@v1

@@ -8,14 +8,6 @@ Racemus is an experimental Minecraft server.
 
 ![Screenshot](.github/attachments/screenshot.png)
 
-# Tasks
-
-- [x] Login Sequence
-- [x] Tests for login sequence 50%
-- [x] Start simulation
-- [x] Server status - basic
-- [ ] 1 chunk flatland
-
 # Getting Started
 
 1. `generate-key.ps1` is both a Powershell and Bash script. You will need
