@@ -1,7 +1,12 @@
 # Racemus
-[![Coverage Status](https://coveralls.io/repos/github/jcdickinson/racemus/badge.svg)](https://coveralls.io/github/jcdickinson/racemus)
+
+![Build Status](https://img.shields.io/github/workflow/status/jcdickinson/racemus/Continuous%20Integration)
+[![Coverage Status](https://coveralls.io/repos/github/jcdickinson/racemus/badge.svg?branch=master)](https://coveralls.io/github/jcdickinson/racemus?branch=master)
+[![Release](https://img.shields.io/github/v/release/jcdickinson/racemus?include_prereleases&sort=semver)](https://github.com/jcdickinson/racemus/releases/)
 
 Racemus is an experimental Minecraft server.
+
+![Screenshot](.github/attachments/screenshot.png)
 
 # Tasks
 
