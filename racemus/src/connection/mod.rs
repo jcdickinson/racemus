@@ -23,6 +23,7 @@ pub enum ConnectionError {
     ServerClosing,
     UnsupportedVersion,
     AuthenticationFailed,
+    UnknownPacketType(i32),
 }
 
 impl Error for ConnectionError {}
@@ -31,15 +32,13 @@ impl std::fmt::Display for ConnectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Self::NotImplemented => write!(f, "This feature is not supported by this server."),
-            Self::InvalidTransition => write!(
-                f,
-                "The Minecraft client attempted to perform an invalid action."
-            ),
-            Self::InvalidVerifier => write!(f, "Authentication failed."),
-            Self::InvalidKey => write!(f, "Authentication failed."),
-            Self::ServerClosing => write!(f, "The server is shutting down."),
-            Self::UnsupportedVersion => write!(f, "Your client version is not supported."),
-            Self::AuthenticationFailed => write!(f, "Authentication failed."),
+            Self::InvalidTransition => write!(f, "invalid transition"),
+            Self::InvalidVerifier => write!(f, "invalid verifier"),
+            Self::InvalidKey => write!(f, "invalid key"),
+            Self::ServerClosing => write!(f, "server closing"),
+            Self::UnsupportedVersion => write!(f, "client not supported"),
+            Self::AuthenticationFailed => write!(f, "authentication failed"),
+            Self::UnknownPacketType(packet_id) => write!(f, "unknown packet type: {}", packet_id),
         }
     }
 }
@@ -75,7 +74,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> std::f
             ConnectionState::AwaitingStatusRequest => {
                 write!(f, "({}-{} state)", self.addr, player_id)
             }
-            ConnectionState::AwaitingStatusPing => write!(f, "({}-{} ping)", self.addr, player_id),
             ConnectionState::AwaitingLogin => write!(f, "({}-{} login)", self.addr, player_id),
             ConnectionState::AwaitingEncryptionResponse => {
                 write!(f, "({}-{} encrypt)", self.addr, player_id)
@@ -116,7 +114,6 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 let result = match self.state {
                     ConnectionState::Open => self.execute_open().await,
                     ConnectionState::AwaitingStatusRequest => self.execute_status_request().await,
-                    ConnectionState::AwaitingStatusPing => self.execute_status_ping().await,
                     ConnectionState::AwaitingLogin => self.execute_login().await,
                     ConnectionState::AwaitingEncryptionResponse => {
                         self.execute_encryption_response().await
@@ -177,7 +174,9 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     Ok(())
                 }
             },
-            _ => Err(ConnectionError::InvalidTransition.into()),
+            OpenRequest::Unknown { packet_id } => {
+                Err(ConnectionError::UnknownPacketType(packet_id).into())
+            }
         }
     }
     async fn execute_status_request(&mut self) -> Result<(), Box<dyn Error>> {
@@ -190,21 +189,17 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     description: &self.controllers.config().network().motd(),
                 })?;
                 self.writer.flush().await?;
-                self.state = ConnectionState::AwaitingStatusPing;
                 Ok(())
             }
-            _ => Err(ConnectionError::InvalidTransition.into()),
-        }
-    }
-    async fn execute_status_ping(&mut self) -> Result<(), Box<dyn Error>> {
-        match self.reader.read_status().await? {
             StatusRequest::Ping { timestamp } => {
                 trace!("{} request for ping", self);
                 self.writer.structure(&StatusResponse::Pong { timestamp })?;
                 self.writer.flush().await?;
                 Ok(())
             }
-            _ => Err(ConnectionError::InvalidTransition.into()),
+            StatusRequest::Unknown { packet_id } => {
+                Err(ConnectionError::UnknownPacketType(packet_id).into())
+            }
         }
     }
 
@@ -229,6 +224,9 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 self.state = ConnectionState::AwaitingEncryptionResponse;
 
                 Ok(())
+            }
+            LoginRequest::Unknown { packet_id } => {
+                Err(ConnectionError::UnknownPacketType(packet_id).into())
             }
             _ => Err(ConnectionError::InvalidTransition.into()),
         }
@@ -334,6 +332,9 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
 
                 Ok(())
             }
+            LoginRequest::Unknown { packet_id } => {
+                Err(ConnectionError::UnknownPacketType(packet_id).into())
+            }
             _ => Err(ConnectionError::InvalidTransition.into()),
         }
     }
@@ -361,7 +362,6 @@ pub enum ConnectionState {
 
     // Status
     AwaitingStatusRequest,
-    AwaitingStatusPing,
 
     // Login
     AwaitingLogin,

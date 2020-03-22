@@ -39,7 +39,6 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, StatusResponse<'a>> for BinaryWri
     fn structure(&mut self, val: &StatusResponse) -> Result<&mut Self, Error> {
         let insertion = self.create_insertion();
         match val {
-            StatusResponse::Pong { timestamp } => self.var_i32(0x01)?.fix_u64(*timestamp)?,
             StatusResponse::InfoResponse {
                 max_players,
                 current_players,
@@ -59,8 +58,9 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, StatusResponse<'a>> for BinaryWri
                     }
                 });
                 let response = serde_json::to_string(&response).unwrap();
-                self.var_i32(0x01)?.arr_char(&response)?
+                self.var_i32(0x00)?.arr_char(&response)?
             }
+            StatusResponse::Pong { timestamp } => self.var_i32(0x01)?.fix_u64(*timestamp)?,
         }
         .insert_len_var_i32(insertion)
     }
