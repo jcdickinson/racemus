@@ -1,6 +1,6 @@
 # Racemus
 
-![Build Status](https://img.shields.io/github/workflow/status/jcdickinson/racemus/Continuous%20Integration)
+[![Build Status](https://img.shields.io/github/workflow/status/jcdickinson/racemus/Continuous%20Integration)](https://github.com/jcdickinson/racemus/actions?query=workflow%3A%22Continuous+Integration%22)
 [![Coverage Status](https://coveralls.io/repos/github/jcdickinson/racemus/badge.svg?branch=master)](https://coveralls.io/github/jcdickinson/racemus?branch=master)
 [![Release](https://img.shields.io/github/v/release/jcdickinson/racemus?include_prereleases&sort=semver)](https://github.com/jcdickinson/racemus/releases/)
 
