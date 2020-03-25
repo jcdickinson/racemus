@@ -113,7 +113,7 @@ pub enum PlayResponse<'a> {
 
 impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWriter<W> {
     fn structure(&mut self, val: &PlayResponse<'a>) -> Result<&mut Self, Error> {
-        let insertion = self.create_insertion();
+        let packet = self.start_packet();
         match val {
             PlayResponse::ServerDifficulty {
                 difficulty,
@@ -162,7 +162,7 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWrite
                 .var_i32(*teleport_id)?,
             PlayResponse::HeldItemChange { slot } => self.var_i32(0x40)?.fix_u8(*slot)?,
         }
-        .insert_len_var_i32(insertion)
+        .complete_packet(packet)
     }
 }
 

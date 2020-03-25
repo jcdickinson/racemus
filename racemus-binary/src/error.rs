@@ -19,6 +19,14 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(val: std::io::Error) -> Self {
+        Self {
+            kind: ErrorKind::IOError(val),
+        }
+    }
+}
+
 impl From<ErrorKind> for Error {
     fn from(value: ErrorKind) -> Self {
         Self { kind: value }
@@ -34,6 +42,7 @@ pub enum ErrorKind {
     EndOfData,
     InvalidVarint,
     InvalidKey,
+    InvalidOperation,
     InvalidState(i32),
     IOError(std::io::Error),
     InvalidString(Utf8Error),
@@ -49,6 +58,7 @@ impl std::fmt::Display for ErrorKind {
             Self::EndOfData => write!(f, "end of data"),
             Self::InvalidVarint => write!(f, "invalid varint"),
             Self::InvalidKey => write!(f, "invalid encryption key"),
+            Self::InvalidOperation => write!(f, "invalid operation"),
             Self::InvalidState(s) => write!(f, "invalid state: {}", s),
             Self::IOError(e) => write!(f, "I/O error: {}", e),
             Self::InvalidString(e) => write!(f, "invalid string: {}", e),

@@ -23,16 +23,51 @@ impl<W: Write + Unpin> BinaryWriter<W> {
         self.arr_u8(val.as_bytes())
     }
 
-    pub(crate) fn insert_len_var_i32(
-        &mut self,
-        insertion: BinaryWriterInsertion,
-    ) -> Result<&mut Self, Error> {
-        let len = self.bytes_after_insertion(&insertion);
-        if len > MAX_LEN {
-            return Err(ErrorKind::LengthTooLarge.into());
+    pub(crate) fn start_packet(&mut self) -> PacketInsertion {
+        if self.compression_allowed() {
+            PacketInsertion {
+                uncompressed_length: Some(self.create_insertion()),
+                raw_length: self.create_insertion()
+            }
+        } else {
+            PacketInsertion {
+                uncompressed_length: None,
+                raw_length: self.create_insertion()
+            }
         }
-        self.insert_var_i32(insertion, len as i32)
     }
+
+    pub(crate) fn complete_packet(&mut self, packet: PacketInsertion) -> Result<&mut Self, Error> {
+        let raw_length = packet.raw_length;
+        if let Some(uncompressed_length) = packet.uncompressed_length {
+            let original_len = self.bytes_after_insertion(&raw_length);
+            if original_len > MAX_LEN {
+                return Err(ErrorKind::LengthTooLarge.into());
+            }
+
+            match self.try_compress(&raw_length)? {
+                Some(compressed_len) => {
+                    self.insert_var_i32(uncompressed_length, compressed_len as i32)?;
+                    self.insert_var_i32(raw_length, original_len as i32)
+                }
+                None => {
+                    self.insert_var_i32(uncompressed_length, original_len as i32)?;
+                    self.insert_var_i32(raw_length, 0)
+                }
+            }
+        } else {
+            let len = self.bytes_after_insertion(&raw_length);
+            if len > MAX_LEN {
+                return Err(ErrorKind::LengthTooLarge.into());
+            }
+            self.insert_var_i32(raw_length, len as i32)
+        }
+    }
+}
+
+pub(crate) struct PacketInsertion {
+    uncompressed_length: Option<BinaryWriterInsertion>,
+    raw_length: BinaryWriterInsertion,
 }
 
 #[cfg(test)]
@@ -41,15 +76,46 @@ mod tests {
     use crate::tests::*;
 
     #[test]
-    pub fn binary_writer_insert_len_var_i32() -> Result<(), Error> {
+    pub fn binary_writer_complete_packet() -> Result<(), Error> {
         let mut writer = make_writer();
 
-        let pre = writer.create_insertion();
+        let pre = writer.start_packet();
         writer.raw_buffer(b"1234" as &[u8])?;
-        writer.insert_len_var_i32(pre)?;
+        writer.complete_packet(pre)?;
 
         let buf = make_buffer(writer);
         assert_eq!(buf, b"\x041234");
+
+        Ok(())
+    }
+    
+    #[test]
+    pub fn binary_writer_complete_packet_compressed() -> Result<(), Error> {
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+
+        let mut writer = make_writer();
+        writer.allow_compression(0);
+
+        let pre = writer.start_packet();
+        let mut expected = "".to_string();
+        for i in 1..1000 {
+            expected.push_str(&i.to_string());
+        }
+        writer.raw_buffer(expected.as_bytes())?;
+        writer.complete_packet(pre)?;
+
+        let buf = make_buffer(writer);
+        
+        // This is not entirely deterministic and may have to be updated if the
+        // flate2 crate is updated.
+        assert_eq!(buf[0..4], [0x96, 0x0a, 0xc9, 0x16]); // 1032, 2889
+        
+        let mut zlib = ZlibDecoder::new(&buf[4..]);
+        let mut actual = String::new();
+        zlib.read_to_string(&mut actual)?;
+
+        assert_eq!(actual, expected);
 
         Ok(())
     }

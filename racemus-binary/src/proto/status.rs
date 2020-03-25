@@ -37,7 +37,7 @@ pub enum StatusResponse<'a> {
 
 impl<'a, W: Write + Unpin> StructuredWriter<W, StatusResponse<'a>> for BinaryWriter<W> {
     fn structure(&mut self, val: &StatusResponse) -> Result<&mut Self, Error> {
-        let insertion = self.create_insertion();
+        let packet = self.start_packet();
         match val {
             StatusResponse::InfoResponse {
                 max_players,
@@ -62,7 +62,7 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, StatusResponse<'a>> for BinaryWri
             }
             StatusResponse::Pong { timestamp } => self.var_i32(0x01)?.fix_u64(*timestamp)?,
         }
-        .insert_len_var_i32(insertion)
+        .complete_packet(packet)
     }
 }
 

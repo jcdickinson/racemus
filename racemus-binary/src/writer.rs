@@ -2,8 +2,8 @@ use crate::AesCfb8;
 use crate::{Error, ErrorKind};
 use async_std::io::{prelude::*, Write};
 use cfb8::stream_cipher::StreamCipher;
-use std::marker::Unpin;
-use std::ops::Range;
+use flate2::{write::ZlibEncoder, Compression};
+use std::{marker::Unpin, ops::Range};
 
 pub trait StructuredWriter<W: Write + Unpin, T> {
     fn structure(&mut self, val: &T) -> Result<&mut Self, Error>;
@@ -14,6 +14,8 @@ pub struct BinaryWriter<W: Write + Unpin> {
     buffer: Vec<u8>,
     writer: W,
     cipher: Option<AesCfb8>,
+    compression_buffer: Option<Vec<u8>>,
+    compression_threshold: Option<usize>,
 }
 
 macro_rules! build_write_varint {
@@ -98,6 +100,8 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             buffer: Vec::new(),
             writer,
             cipher: None,
+            compression_buffer: None,
+            compression_threshold: None,
         }
     }
 
@@ -204,6 +208,93 @@ impl<W: Write + Unpin> BinaryWriter<W> {
         self.fix_u8(if val { 1 } else { 0 })
     }
 
+    #[inline]
+    pub fn allow_compression(&mut self, threshold: usize) {
+        self.compression_threshold = Some(threshold);
+    }
+
+    #[inline]
+    pub(crate) fn compression_allowed(&self) -> bool {
+        self.compression_threshold.is_some()
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn try_compress(
+        &mut self,
+        after: &BinaryWriterInsertion,
+    ) -> Result<Option<usize>, Error> {
+        use std::io::Write;
+
+        let threshold = match self.compression_threshold {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        // Only compress if it is over the threshold
+        if self.bytes_after_insertion(&after) < threshold {
+            return Ok(None);
+        }
+
+        let buffer = match std::mem::take(&mut self.compression_buffer) {
+            Some(b) => b,
+            None => Vec::new(),
+        };
+
+        // Data needs to follow
+        if after.index == self.order.len() {
+            return Err(ErrorKind::InvalidOperation.into());
+        }
+
+        // Collapse 1..2, 2..5, 5..10 into 1..10
+        let mut data_range: Option<Range<usize>> = None;
+        let order_range = (after.index + 1)..self.order.len();
+        for i in order_range.clone() {
+            let current = &self.order[i];
+            match current {
+                Some(current) => {
+                    if let Some(previous) = data_range {
+                        if current.start == previous.end {
+                            data_range = Some(previous.start..current.end)
+                        } else {
+                            return Err(ErrorKind::InvalidOperation.into());
+                        }
+                    } else {
+                        data_range = Some(current.clone());
+                    }
+                }
+                // All subsequent length prefixes must be resolved
+                None => return Err(ErrorKind::InvalidOperation.into()),
+            }
+        }
+
+        let data_range = match data_range {
+            Some(r) => r,
+            None => return Err(ErrorKind::InvalidOperation.into()),
+        };
+
+        let mut zlib = ZlibEncoder::new(buffer, Compression::fast());
+        zlib.write_all(&self.buffer[data_range.clone()])?;
+        let mut buffer = zlib.finish()?;
+
+        let result = if buffer.len() > data_range.len() {
+            // Compression resulted in a larger packet, so just throw the result away
+            buffer.truncate(0);
+            Ok(None)
+        } else {
+            self.buffer.truncate(self.buffer.len() - data_range.len());
+            self.buffer.append(&mut buffer);
+
+            let data_range = data_range.start..self.buffer.len();
+            self.order.truncate(self.order.len() - order_range.len());
+            self.order.push(Some(data_range.clone()));
+            Ok(Some(data_range.len()))
+        };
+
+        self.compression_buffer = Some(buffer);
+        result
+    }
+
     build_write_fixnum!(fix_i8, i8);
     build_write_fixnum!(fix_i16, i16);
     build_write_fixnum!(fix_i32, i32);
@@ -267,6 +358,98 @@ mod tests {
         block_on(writer.fix_u8(1)?.fix_u8(10)?.flush()).unwrap();
         let buf = make_buffer(writer);
         assert_eq!(buf, b"\x2f\x57\xb5\x42");
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn binary_writer_compression_threshold() -> Result<(), Error> {
+        let mut writer = make_writer();
+
+        let pre = writer.create_insertion();
+        let mut expected = String::new();
+        for i in 1..1000 {
+            expected.push_str(&i.to_string());
+        }
+        writer.raw_buffer(expected.as_bytes())?;
+
+        writer.allow_compression(writer.buffer.len() + 1);
+        match writer.try_compress(&pre)? {
+            Some(_) => panic!("threshold not exceeded"),
+            None => {}
+        }
+
+        // The location of the data here is based on how length prefixes work at the time of writing the test. If that
+        // changes, then so must the test.
+        let buf = std::mem::take(&mut writer.buffer);
+        let order = writer.order[1].clone().unwrap();
+        let mut reader = &buf[order];
+        let mut actual = String::new();
+        block_on(reader.read_to_string(&mut actual))?;
+
+        assert_eq!(actual, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn binary_writer_compression_skip() -> Result<(), Error> {
+        let mut writer = make_writer();
+
+        let pre = writer.create_insertion();
+        let expected = "smol".to_string();
+        writer.raw_buffer(expected.as_bytes())?;
+
+        writer.allow_compression(0);
+        match writer.try_compress(&pre)? {
+            Some(_) => panic!("couldn't possibly be smaller"),
+            None => {}
+        }
+
+        // The location of the data here is based on how length prefixes work at the time of writing the test. If that
+        // changes, then so must the test.
+        let buf = std::mem::take(&mut writer.buffer);
+        let order = writer.order[1].clone().unwrap();
+        let mut reader = &buf[order];
+        let mut actual = String::new();
+        block_on(reader.read_to_string(&mut actual))?;
+
+        assert_eq!(actual, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn binary_writer_compression() -> Result<(), Error> {
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+
+        let mut writer = make_writer();
+
+        let pre = writer.create_insertion();
+        let mut expected = String::new();
+
+        for i in 1..1000 {
+            expected.push_str(&i.to_string());
+        }
+        writer.raw_buffer(expected.as_bytes())?;
+
+        let data_before = writer.bytes_after_insertion(&pre);
+        writer.allow_compression(0);
+        match writer.try_compress(&pre)? {
+            Some(data_after) => assert!(data_before > data_after),
+            _ => panic!("expected a smaller buffer"),
+        }
+
+        // The location of the data here is based on how length prefixes work at the time of writing the test. If that
+        // changes, then so must the test.
+        let buf = std::mem::take(&mut writer.buffer);
+        let order = writer.order[1].clone().unwrap();
+        let mut zlib = ZlibDecoder::new(&buf[order]);
+        let mut actual = String::new();
+        zlib.read_to_string(&mut actual)?;
+
+        assert_eq!(actual, expected);
 
         Ok(())
     }

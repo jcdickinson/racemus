@@ -54,7 +54,7 @@ pub enum LoginResponse<'a> {
 
 impl<'a, W: Write + Unpin> StructuredWriter<W, LoginResponse<'a>> for BinaryWriter<W> {
     fn structure(&mut self, val: &LoginResponse<'a>) -> Result<&mut Self, Error> {
-        let insertion = self.create_insertion();
+        let packet = self.start_packet();
         match val {
             LoginResponse::EncryptionRequest {
                 public_key,
@@ -73,7 +73,7 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, LoginResponse<'a>> for BinaryWrit
                 .arr_char(player_name)?,
             LoginResponse::Disconnect { reason } => self.var_i32(0x00)?.arr_char(reason)?,
         }
-        .insert_len_var_i32(insertion)
+        .complete_packet(packet)
     }
 }
 
