@@ -27,12 +27,12 @@ impl<W: Write + Unpin> BinaryWriter<W> {
         if self.compression_allowed() {
             PacketInsertion {
                 uncompressed_length: Some(self.create_insertion()),
-                raw_length: self.create_insertion()
+                raw_length: self.create_insertion(),
             }
         } else {
             PacketInsertion {
                 uncompressed_length: None,
-                raw_length: self.create_insertion()
+                raw_length: self.create_insertion(),
             }
         }
     }
@@ -88,7 +88,7 @@ mod tests {
 
         Ok(())
     }
-    
+
     #[test]
     pub fn binary_writer_complete_packet_compressed() -> Result<(), Error> {
         use flate2::read::ZlibDecoder;
@@ -106,11 +106,11 @@ mod tests {
         writer.complete_packet(pre)?;
 
         let buf = make_buffer(writer);
-        
+
         // This is not entirely deterministic and may have to be updated if the
         // flate2 crate is updated.
         assert_eq!(buf[0..4], [0x96, 0x0a, 0xc9, 0x16]); // 1032, 2889
-        
+
         let mut zlib = ZlibDecoder::new(&buf[4..]);
         let mut actual = String::new();
         zlib.read_to_string(&mut actual)?;
