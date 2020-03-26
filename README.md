@@ -14,3 +14,11 @@ Racemus is an experimental Minecraft server.
    openssl on the path.
 2. `rustup target add x86_64-pc-windows-gnu --toolchain nightly`
 3. Once you have a key, cargo run should just work.
+
+# Docker
+
+You can run the latest build with:
+
+```sh
+docker run -p 25565:25565 jcdickinson/racemus
+```

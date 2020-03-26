@@ -36,7 +36,7 @@ jobs:
           CARGO_INCREMENTAL: 0
       
   build:
-    name: Build
+    name: Windows Build
     needs: test
     runs-on: windows-latest
     steps:
@@ -75,7 +75,7 @@ jobs:
           asset_content_type: application/zip
 
   publish-to-dockerhub:
-    name: Publish to Dockerhub
+    name: Docker Build
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -89,3 +89,24 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           tag_semver: true
+
+  update-testing-server:
+    name: Update Testing Server
+    needs: publish-to-dockerhub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Sources
+        uses: actions/checkout@v2
+
+      - name: Update Deployment File
+        run: TAG=$(echo $GITHUB_SHA | head -c7) && sed -i 's|<IMAGE>|jcdickinson/racemus:latest|' $GITHUB_WORKSPACE/.github/kube/deployment.yml
+
+      - name: Save DigitalOcean kubeconfig
+        uses: digitalocean/action-doctl@master
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        with:
+          args: kubernetes cluster kubeconfig show pool-racemus-ci > $GITHUB_WORKSPACE/.kubeconfig
+
+      - name: Deploy to DigitalOcean Kubernetes
+        run: kubectl --kubeconfig=$GITHUB_WORKSPACE/.kubeconfig apply -f $GITHUB_WORKSPACE/config/deployment.yml
