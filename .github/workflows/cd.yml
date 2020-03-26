@@ -79,8 +79,10 @@ jobs:
     needs: test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@master
-        name: Publish to Dockerhub
+      - name: Checkout Sources
+        uses: actions/checkout@v2
+        
+      - name: Publish to Dockerhub
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
           name: jcdickinson/racemus
