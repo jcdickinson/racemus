@@ -9,6 +9,10 @@ port = 25565
 # below the name. 
 # Default: "A Minecraft Server"
 motd = "A Minecraft Server"
+# Controls the small threshold for packet compression. No attempt will be made
+# compress packets smaller than this.
+# Default: 255
+compression-threshold = 255
 
 [security]
 # The private and public key file can be created with openssl:
