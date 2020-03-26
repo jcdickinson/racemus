@@ -1,7 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: racemus-ci
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: racemus-ci
+  namespace: racemus-ci
   labels:
     app: racemus-ci
 spec:
@@ -24,6 +30,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: racemus-ci
+  namespace: racemus-ci
 spec:
   type: LoadBalancer
   ports:
