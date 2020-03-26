@@ -1,26 +1,35 @@
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: racemus
+  name: racemus-ci
+  labels:
+    app: racemus-ci
 spec:
   replicas: 1
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
-  minReadySeconds: 5
+  selector:
+    matchLabels:
+      app: racemus-ci
   template:
     metadata:
       labels:
-        app: racemus
+        app: racemus-ci
     spec:
       containers:
-      - name: racemus
+      - name: racemus-ci
         image: <IMAGE>
         ports:
         - containerPort: 25565
-        resources:
-          requests:
-            cpu: 100m
-          limits:
-            cpu: 100m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: racemus-ci
+spec:
+  type: LoadBalancer
+  ports:
+    - name: minecraft
+      protocol: TCP
+      port: 25565
+      targetPort: 25565
+  selector:
+    app: racemus-ci

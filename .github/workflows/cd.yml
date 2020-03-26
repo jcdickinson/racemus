@@ -110,3 +110,6 @@ jobs:
 
       - name: Deploy to DigitalOcean Kubernetes
         run: kubectl --kubeconfig=$GITHUB_WORKSPACE/.k8sconfig apply -f $GITHUB_WORKSPACE/.github/k8s/deployment.yml
+
+      - name: Verify Deployment
+        run: kubectl --kubeconfig=$GITHUB_WORKSPACE/.k8sconfig rollout status deployment/racemus-ci
