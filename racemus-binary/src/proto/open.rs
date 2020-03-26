@@ -1,4 +1,7 @@
-use crate::{writer::StructuredWriter, BinaryReader, BinaryWriter, Error, ErrorKind};
+use crate::{
+    proto::packet_ids::open as packet_ids, writer::StructuredWriter, BinaryReader, BinaryWriter,
+    Error, ErrorKind,
+};
 use async_std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -25,7 +28,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
     pub async fn read_open(&mut self) -> Result<OpenRequest, Error> {
         let packet_id = self.packet_header().await?;
         match packet_id {
-            0x00 => {
+            packet_ids::HANDSHAKE => {
                 let version = self.var_i32().await?;
                 let address = self.arr_char(Some(255)).await?;
                 let port = self.fix_u16().await?;

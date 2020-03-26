@@ -29,6 +29,23 @@ impl<R: Read + Unpin> BinaryReader<R> {
         let count = self.len_var_i32(None).await?;
         self.with_size(Some(count));
 
+        if self.compression_allowed() {
+            let data_length = self.var_i32().await?;
+            if data_length < 0 {
+                return Err(ErrorKind::InvalidLengthPrefix.into());
+            }
+            let data_length = data_length as usize;
+
+            if data_length != 0 {
+                let count = count - (count - self.remaining().unwrap());
+                self.with_size(None);
+                self.decompress(count, data_length).await?;
+                self.with_size(Some(data_length));
+            }
+        } else {
+            self.with_size(Some(count));
+        }
+
         let packet_id = self.var_i32().await?;
         Ok(packet_id)
     }
@@ -113,6 +130,22 @@ mod tests {
         let mut reader = make_reader(b"\x03\x0123\x01\x15");
         assert_eq!(block_on(reader.packet_header())?, 1);
         assert_eq!(block_on(reader.packet_header())?, 0x15);
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn binary_reader_packet_header_compressed() -> Result<(), Error> {
+        let mut reader = make_reader(include_bytes!("./test-data/packet-compressed.in") as &[u8]);
+        reader.allow_compression();
+
+        let mut expected = "".to_string();
+        for i in 1..1000 {
+            expected.push_str(&i.to_string());
+        }
+
+        assert_eq!(block_on(reader.packet_header())?, 0x15);
+        assert_eq!(block_on(reader.data(expected.len()))?, expected.as_bytes());
 
         Ok(())
     }

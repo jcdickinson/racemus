@@ -1,3 +1,4 @@
+mod circular;
 mod error;
 pub mod proto;
 mod reader;

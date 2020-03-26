@@ -1,4 +1,7 @@
-use crate::{writer::StructuredWriter, BinaryReader, BinaryWriter, Error};
+use crate::{
+    proto::packet_ids::play as packet_ids, writer::StructuredWriter, BinaryReader, BinaryWriter,
+    Error,
+};
 use async_std::io::{Read, Write};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,13 +122,16 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWrite
                 difficulty,
                 difficulty_locked,
             } => self
-                .var_i32(0x0e)?
+                .var_i32(packet_ids::SERVER_DIFFICULTY)?
                 .fix_u8((*difficulty).into())?
                 .fix_bool(*difficulty_locked)?,
-            PlayResponse::Plugin { channel, data } => {
-                self.var_i32(0x19)?.arr_char(channel)?.arr_u8(data)?
+            PlayResponse::Plugin { channel, data } => self
+                .var_i32(packet_ids::PLUGIN)?
+                .arr_char(channel)?
+                .arr_u8(data)?,
+            PlayResponse::Disconnect { reason } => {
+                self.var_i32(packet_ids::DISCONNECT)?.arr_char(reason)?
             }
-            PlayResponse::Disconnect { reason } => self.var_i32(0x1b)?.arr_char(reason)?,
             PlayResponse::JoinGame {
                 entity_id,
                 game_mode,
@@ -136,7 +142,7 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWrite
                 reduce_debug,
                 enable_respawn_screen,
             } => self
-                .var_i32(0x26)?
+                .var_i32(packet_ids::JOIN_GAME)?
                 .fix_i32(*entity_id as i32)?
                 .fix_u8((*game_mode).into())?
                 .fix_i32(*dimension)?
@@ -152,7 +158,7 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWrite
                 flags,
                 teleport_id,
             } => self
-                .var_i32(0x36)?
+                .var_i32(packet_ids::SET_POSITION_AND_LOOK)?
                 .fix_f64(position[0])?
                 .fix_f64(position[1])?
                 .fix_f64(position[2])?
@@ -160,7 +166,9 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, PlayResponse<'a>> for BinaryWrite
                 .fix_f32(look[1])?
                 .fix_u8(*flags)?
                 .var_i32(*teleport_id)?,
-            PlayResponse::HeldItemChange { slot } => self.var_i32(0x40)?.fix_u8(*slot)?,
+            PlayResponse::HeldItemChange { slot } => {
+                self.var_i32(packet_ids::HELD_ITEM_CHANGE)?.fix_u8(*slot)?
+            }
         }
         .complete_packet(packet)
     }

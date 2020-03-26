@@ -56,7 +56,7 @@ macro_rules! build_insert_varint {
             &mut self,
             insertion: BinaryWriterInsertion,
             val: $type,
-        ) -> Result<&mut Self, Error> {
+        ) -> Result<usize, Error> {
             const SIZE: usize = std::mem::size_of::<$type>();
             const SHIFT: usize = 7;
             const BITSIZE: usize = SIZE * 8;
@@ -77,7 +77,7 @@ macro_rules! build_insert_varint {
                 }
             }
             self.insert_raw_buffer(insertion, &b[0..i])?;
-            Ok(self)
+            Ok(i)
         }
     };
 }
@@ -185,7 +185,7 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             if let Some(range) = order {
                 match self.writer.write_all(&mut self.buffer[range.clone()]).await {
                     Ok(_) => (),
-                    Err(e) => return Err(ErrorKind::IOError(e).into()),
+                    Err(e) => return Err(e.into()),
                 }
             } else {
                 return Err(ErrorKind::PendingInsertion.into());
@@ -441,7 +441,7 @@ mod tests {
             _ => panic!("expected a smaller buffer"),
         }
 
-        // The location of the data here is based on how length prefixes work at the time of writing the test. If that
+        // The location of the data here is based on how insertion points work at the time of writing the test. If that
         // changes, then so must the test.
         let buf = std::mem::take(&mut writer.buffer);
         let order = writer.order[1].clone().unwrap();

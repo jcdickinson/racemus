@@ -47,12 +47,13 @@ impl<W: Write + Unpin> BinaryWriter<W> {
 
             match self.try_compress(&raw_length)? {
                 Some(compressed_len) => {
+                    let compressed_len =
+                        compressed_len + self.insert_var_i32(raw_length, original_len as i32)?;
                     self.insert_var_i32(uncompressed_length, compressed_len as i32)?;
-                    self.insert_var_i32(raw_length, original_len as i32)
                 }
                 None => {
+                    let original_len = original_len + self.insert_var_i32(raw_length, 0)?;
                     self.insert_var_i32(uncompressed_length, original_len as i32)?;
-                    self.insert_var_i32(raw_length, 0)
                 }
             }
         } else {
@@ -60,8 +61,9 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             if len > MAX_LEN {
                 return Err(ErrorKind::LengthTooLarge.into());
             }
-            self.insert_var_i32(raw_length, len as i32)
+            self.insert_var_i32(raw_length, len as i32)?;
         }
+        Ok(self)
     }
 }
 
@@ -107,9 +109,9 @@ mod tests {
 
         let buf = make_buffer(writer);
 
-        // This is not entirely deterministic and may have to be updated if the
-        // flate2 crate is updated.
-        assert_eq!(buf[0..4], [0x96, 0x0a, 0xc9, 0x16]); // 1032, 2889
+        // This is not entirely deterministic and this may have to be updated if
+        // the flate2 crate is updated.
+        assert_eq!(buf[0..4], [0x98, 0x0a, 0xc9, 0x16]); // 1032, 2889
 
         let mut zlib = ZlibDecoder::new(&buf[4..]);
         let mut actual = String::new();

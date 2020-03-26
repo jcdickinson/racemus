@@ -1,4 +1,7 @@
-use crate::{writer::StructuredWriter, BinaryReader, BinaryWriter, Error};
+use crate::{
+    proto::packet_ids::login as packet_ids, writer::StructuredWriter, BinaryReader, BinaryWriter,
+    Error,
+};
 use async_std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -20,11 +23,11 @@ impl<R: Read + Unpin> BinaryReader<R> {
     pub async fn read_login(&mut self) -> Result<LoginRequest, Error> {
         let packet_id = self.packet_header().await?;
         match packet_id {
-            0x00 => {
+            packet_ids::START => {
                 let player_name = self.arr_char(Some(16)).await?;
                 Ok(LoginRequest::Start { player_name })
             }
-            0x01 => {
+            packet_ids::ENCRYPTION_RESPONSE => {
                 let encrypted_shared_secret = self.arr_u8(Some(128)).await?;
                 let encrypted_verifier = self.arr_u8(Some(128)).await?;
                 Ok(LoginRequest::EncryptionResponse {
@@ -47,6 +50,9 @@ pub enum LoginResponse<'a> {
         player_uuid: &'a str,
         player_name: &'a str,
     },
+    SetCompression {
+        compression_threshold: u16,
+    },
     Disconnect {
         reason: &'a str,
     },
@@ -60,7 +66,7 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, LoginResponse<'a>> for BinaryWrit
                 public_key,
                 verify_token,
             } => self
-                .var_i32(0x01)?
+                .var_i32(packet_ids::ENCRYPTION_REQUEST)?
                 .var_i32(0)? // Server ID (obsolete)
                 .arr_u8(public_key)?
                 .arr_u8(verify_token)?,
@@ -68,10 +74,17 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, LoginResponse<'a>> for BinaryWrit
                 player_uuid,
                 player_name,
             } => self
-                .var_i32(0x02)?
+                .var_i32(packet_ids::SUCCESS)?
                 .arr_char(player_uuid)?
                 .arr_char(player_name)?,
-            LoginResponse::Disconnect { reason } => self.var_i32(0x00)?.arr_char(reason)?,
+            LoginResponse::SetCompression {
+                compression_threshold,
+            } => self
+                .var_i32(packet_ids::SET_COMPRESSION)?
+                .var_i32(*compression_threshold as i32)?,
+            LoginResponse::Disconnect { reason } => {
+                self.var_i32(packet_ids::DISCONNECT)?.arr_char(reason)?
+            }
         }
         .complete_packet(packet)
     }

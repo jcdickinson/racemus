@@ -1,4 +1,7 @@
-use crate::{writer::StructuredWriter, BinaryReader, BinaryWriter, Error};
+use crate::{
+    proto::packet_ids::status as packet_ids, writer::StructuredWriter, BinaryReader, BinaryWriter,
+    Error,
+};
 use async_std::io::{Read, Write};
 use serde_json::json;
 
@@ -13,8 +16,8 @@ impl<R: Read + Unpin> BinaryReader<R> {
     pub async fn read_status(&mut self) -> Result<StatusRequest, Error> {
         let packet_id = self.packet_header().await?;
         match packet_id {
-            0x00 => Ok(StatusRequest::InfoRequest),
-            0x01 => {
+            packet_ids::INFO_REQUEST => Ok(StatusRequest::InfoRequest),
+            packet_ids::PING => {
                 let timestamp = self.fix_u64().await?;
                 Ok(StatusRequest::Ping { timestamp })
             }
@@ -58,9 +61,12 @@ impl<'a, W: Write + Unpin> StructuredWriter<W, StatusResponse<'a>> for BinaryWri
                     }
                 });
                 let response = serde_json::to_string(&response).unwrap();
-                self.var_i32(0x00)?.arr_char(&response)?
+                self.var_i32(packet_ids::INFO_RESPONSE)?
+                    .arr_char(&response)?
             }
-            StatusResponse::Pong { timestamp } => self.var_i32(0x01)?.fix_u64(*timestamp)?,
+            StatusResponse::Pong { timestamp } => {
+                self.var_i32(packet_ids::PONG)?.fix_u64(*timestamp)?
+            }
         }
         .complete_packet(packet)
     }

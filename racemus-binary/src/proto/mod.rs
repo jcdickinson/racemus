@@ -1,5 +1,6 @@
 mod login;
 mod open;
+pub(crate) mod packet_ids;
 mod play;
 mod reader;
 mod status;

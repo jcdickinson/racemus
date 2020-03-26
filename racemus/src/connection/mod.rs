@@ -299,6 +299,18 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                 self.writer.encrypt(aes_out);
                 self.reader.decrypt(aes_in);
 
+                if let Some(compression_threshold) =
+                    self.controllers.config().network().compression_threshold()
+                {
+                    self.writer.structure(&LoginResponse::SetCompression {
+                        compression_threshold,
+                    })?;
+                    self.writer.flush().await?;
+                    self.reader.allow_compression();
+                    self.writer
+                        .allow_compression(compression_threshold as usize);
+                }
+
                 self.writer.structure(&LoginResponse::Success {
                     player_uuid: &player_info.uuid(),
                     player_name: &player_info.name(),

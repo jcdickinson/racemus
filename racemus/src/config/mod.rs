@@ -51,6 +51,11 @@ struct RawNetworkConfig {
     port: u16,
     #[serde(rename = "motd", default = "motd_default")]
     motd: String,
+    #[serde(
+        rename = "compression-threshold",
+        default = "compression_threshold_default"
+    )]
+    compression_threshold: i32,
 }
 
 fn network_default() -> RawNetworkConfig {
@@ -58,6 +63,7 @@ fn network_default() -> RawNetworkConfig {
         ip: ip_default(),
         port: port_default(),
         motd: motd_default(),
+        compression_threshold: compression_threshold_default(),
     }
 }
 
@@ -71,6 +77,10 @@ fn port_default() -> u16 {
 
 fn motd_default() -> String {
     "A Minecraft Server".to_string()
+}
+
+fn compression_threshold_default() -> i32 {
+    256
 }
 
 #[derive(Deserialize)]
@@ -213,6 +223,7 @@ impl TryFrom<RawConfig> for Config {
 pub struct NetworkConfig {
     addr: std::net::SocketAddr,
     motd: Arc<Box<str>>,
+    compression_threshold: Option<u16>,
 }
 
 impl NetworkConfig {
@@ -221,6 +232,9 @@ impl NetworkConfig {
     }
     pub fn motd(&self) -> &Arc<Box<str>> {
         &self.motd
+    }
+    pub fn compression_threshold(&self) -> Option<u16> {
+        self.compression_threshold
     }
 }
 
@@ -234,7 +248,15 @@ impl TryFrom<RawNetworkConfig> for NetworkConfig {
         };
         let addr = std::net::SocketAddr::new(addr, value.port);
         let motd = Arc::new(value.motd.into());
-        Ok(Self { addr, motd })
+        let compression_threshold = match value.compression_threshold.try_into() {
+            Ok(r) => Some(r),
+            _ => None,
+        };
+        Ok(Self {
+            addr,
+            motd,
+            compression_threshold,
+        })
     }
 }
 

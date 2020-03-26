@@ -1,14 +1,17 @@
+use crate::circular::Buffer;
 use crate::{AesCfb8, Error, ErrorKind};
 use async_std::io::{prelude::*, Read};
 use cfb8::stream_cipher::StreamCipher;
-use circular::Buffer;
+use flate2::read::ZlibDecoder;
 use std::{convert::TryInto, marker::Unpin};
 
 pub struct BinaryReader<R: Read + Unpin> {
     buffer: Buffer,
+    decompression_buffer: Vec<u8>,
     current_len: Option<usize>,
     reader: R,
     cipher: Option<AesCfb8>,
+    allow_compression: bool,
 }
 
 macro_rules! build_read_varint {
@@ -61,6 +64,8 @@ impl<R: Read + Unpin> BinaryReader<R> {
     pub fn new(reader: R) -> Self {
         Self {
             buffer: Buffer::with_capacity(Self::BUFFER_INIT),
+            decompression_buffer: Vec::new(),
+            allow_compression: false,
             current_len: None,
             reader,
             cipher: None,
@@ -103,7 +108,57 @@ impl<R: Read + Unpin> BinaryReader<R> {
         Ok(&self.buffer.data()[0..count])
     }
 
-    async fn fill(&mut self, count: usize) -> Result<(), Error> {
+    #[inline]
+    pub fn allow_compression(&mut self) {
+        self.allow_compression = true;
+    }
+
+    #[inline]
+    pub(crate) fn compression_allowed(&self) -> bool {
+        self.allow_compression
+    }
+
+    #[inline]
+    pub(crate) async fn decompress(
+        &mut self,
+        compressed: usize,
+        decompressed: usize,
+    ) -> Result<(), Error> {
+        use std::io::Read;
+
+        self.validate_length(compressed)?;
+        if self.buffer.available_data() < compressed {
+            self.fill(compressed).await?
+        }
+
+        let data_range = 0..compressed;
+        let mut zlib = ZlibDecoder::new(&self.buffer.data()[data_range.clone()]);
+
+        self.decompression_buffer.resize(decompressed, 0);
+        let mut offset = 0;
+        while offset < self.decompression_buffer.len() {
+            let count = zlib.read(&mut self.decompression_buffer[0..])?;
+            if count == 0 {
+                return Err(ErrorKind::EndOfData.into());
+            }
+            offset += count;
+        }
+
+        if zlib.total_in() as usize != data_range.len() {
+            return Err(ErrorKind::CompressedDataTooLarge.into());
+        }
+
+        let required_size = (self.buffer.available_data() - data_range.len()) + decompressed;
+        self.grow(required_size);
+        self.buffer
+            .replace_slice(data_range, &self.decompression_buffer)
+            .unwrap();
+
+        Ok(())
+    }
+
+    #[inline]
+    fn grow(&mut self, count: usize) {
         if count > self.buffer.available_space() {
             self.buffer.shift();
             if count > self.buffer.available_space() {
@@ -115,10 +170,14 @@ impl<R: Read + Unpin> BinaryReader<R> {
                 self.buffer.grow(grow);
             }
         }
+    }
+
+    async fn fill(&mut self, count: usize) -> Result<(), Error> {
+        self.grow(count);
         while self.buffer.available_data() < count {
             let n = match self.reader.read(&mut self.buffer.space()).await {
                 Ok(r) => r,
-                Err(e) => return Err(ErrorKind::IOError(e).into()),
+                Err(e) => return Err(e.into()),
             };
             if n == 0 {
                 return Err(ErrorKind::EndOfData.into());
@@ -143,7 +202,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
                     let remove = std::cmp::min(*current_len, self.buffer.available_space());
                     let remove = match self.reader.read(&mut self.buffer.space()[0..remove]).await {
                         Ok(r) => r,
-                        Err(e) => return Err(ErrorKind::IOError(e).into()),
+                        Err(e) => return Err(e.into()),
                     };
                     if remove == 0 {
                         return Err(ErrorKind::EndOfData.into());
@@ -158,6 +217,11 @@ impl<R: Read + Unpin> BinaryReader<R> {
     #[inline]
     pub(crate) fn with_size(&mut self, count: Option<usize>) {
         self.current_len = count;
+    }
+
+    #[inline]
+    pub(crate) fn remaining(&mut self) -> Option<usize> {
+        self.current_len
     }
 
     build_read_fixnum!(fix_i8, i8);
@@ -236,6 +300,35 @@ mod tests {
                 _ => return Err(e),
             },
         }
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn binary_reader_decompress() -> Result<(), Error> {
+        use flate2::{write::ZlibEncoder, Compression};
+        use std::io::Write;
+
+        let mut target = ZlibEncoder::new(Vec::new(), Compression::fast());
+        let mut expected = String::new();
+
+        for i in 1..1000 {
+            expected.push_str(&i.to_string());
+        }
+        target.write_all(expected.as_bytes())?;
+
+        let mut compressed_buffer = target.finish()?;
+        let compressed_len = compressed_buffer.len();
+        compressed_buffer.extend_from_slice(&[1, 2, 3, 4]);
+
+        let mut expected = Vec::from(expected.as_bytes());
+        let decompressed_len = expected.len();
+        expected.extend_from_slice(&[1, 2, 3, 4]);
+
+        let mut reader = make_reader(&compressed_buffer);
+
+        block_on(reader.decompress(compressed_len, decompressed_len))?;
+        assert_eq!(block_on(reader.data(expected.len()))?, &expected[..]);
 
         Ok(())
     }

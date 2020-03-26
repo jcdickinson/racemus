@@ -1078,7 +1078,6 @@ dependencies = [
  "aes",
  "async-std",
  "cfb8",
- "circular",
  "flate2",
  "log",
  "ring",
