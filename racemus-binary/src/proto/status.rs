@@ -78,7 +78,7 @@ mod tests {
     use crate::tests::*;
 
     macro_rules! raw_write_tests {
-        ($($name:ident, $expected:expr, $writer:ident => $expr:expr),*) => {
+        ($($name:ident, $expected:expr, $writer:ident => $expr:expr;)*) => {
             $(
                 #[test]
                 fn $name() -> Result<(), Error> {
@@ -95,12 +95,12 @@ mod tests {
     raw_write_tests!(
         binary_writer_status_pong, "test-data/status-pong-1.in", w => w.structure(&Pong{
             timestamp: 0x1526_3749_5015_2637
-        })?,
+        })?;
         binary_writer_status_info_response, "test-data/status-info-response-1.in", w => w.structure(&InfoResponse {
             max_players: 50,
             current_players: 21,
             description: "Welcome!"
-        })?
+        })?;
     );
 
     macro_rules! raw_read_tests {

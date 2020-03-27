@@ -79,6 +79,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> std::f
                 write!(f, "({}-{} encrypt)", self.addr, player_id)
             }
             ConnectionState::RunningGame => write!(f, "({}-{} running)", self.addr, player_id),
+            ConnectionState::Terminate =>  write!(f, "({}-{} terminating)", self.addr, player_id),
         }
     }
 }
@@ -119,6 +120,7 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                         self.execute_encryption_response().await
                     }
                     ConnectionState::RunningGame => self.execute_game().await,
+                    ConnectionState::Terminate => return
                 };
 
                 if let Err(error) = result {
@@ -173,6 +175,13 @@ impl<R: Read + Unpin + Send + 'static, W: Write + Unpin + Send + 'static> Connec
                     self.state = ConnectionState::AwaitingStatusRequest;
                     Ok(())
                 }
+            },
+            OpenRequest::HttpGet {} => {
+                trace!("{} responding to HTTP probe", self);
+                self.writer.structure(&OpenResponse::HttpOK{})?;
+                self.writer.flush().await?;
+                self.state = ConnectionState::Terminate;
+                Ok(())
             },
             OpenRequest::Unknown { packet_id } => {
                 Err(ConnectionError::UnknownPacketType(packet_id).into())
@@ -381,4 +390,7 @@ pub enum ConnectionState {
 
     // Game
     RunningGame,
+
+    // Close without responding
+    Terminate,
 }
