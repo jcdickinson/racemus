@@ -19,9 +19,7 @@ pub enum OpenRequest {
         port: u16,
         next_state: RequestedState,
     },
-    HttpGet {
-
-    },
+    HttpGet {},
     Unknown {
         packet_id: i32,
     },
@@ -33,9 +31,9 @@ impl<R: Read + Unpin> BinaryReader<R> {
         if self.remaining().is_none() &&
             // HTTP Request
             self.data(1).await? == b"G" &&
-            self.data(4).await? == b"GET " {
-            
-            return Ok(OpenRequest::HttpGet{})
+            self.data(4).await? == b"GET "
+        {
+            return Ok(OpenRequest::HttpGet {});
         }
 
         let packet_id = self.packet_header().await?;
@@ -56,7 +54,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
                     port,
                     next_state,
                 })
-            },
+            }
             _ => Ok(OpenRequest::Unknown { packet_id }),
         }
     }
@@ -64,13 +62,13 @@ impl<R: Read + Unpin> BinaryReader<R> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenResponse {
-    HttpOK {}
+    HttpOK {},
 }
 
 impl<W: Write + Unpin> StructuredWriter<W, OpenResponse> for BinaryWriter<W> {
     fn structure(&mut self, val: &OpenResponse) -> Result<&mut Self, Error> {
         match val {
-            OpenResponse:: HttpOK {} => self.raw_buffer(b"HTTP/1.1 200 OK\r\nConnection: close\r\n")
+            OpenResponse::HttpOK {} => self.raw_buffer(b"HTTP/1.1 200 OK\r\nConnection: close\r\n"),
         }
     }
 }
@@ -79,7 +77,7 @@ impl<W: Write + Unpin> StructuredWriter<W, OpenResponse> for BinaryWriter<W> {
 mod tests {
     use super::{OpenRequest::*, OpenResponse::*, *};
     use crate::tests::*;
-    
+
     macro_rules! raw_write_tests {
         ($($name:ident, $expected:expr, $writer:ident => $expr:expr;)*) => {
             $(
