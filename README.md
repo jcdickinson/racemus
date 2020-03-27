@@ -2,7 +2,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/jcdickinson/racemus/badge.svg?branch=master)](https://coveralls.io/github/jcdickinson/racemus?branch=master)
 [![Release](https://img.shields.io/github/v/release/jcdickinson/racemus?include_prereleases&sort=semver)](https://github.com/jcdickinson/racemus/releases/)
 
-<img align="right" alt="Racemus Logo" width="64" src="docs/logo.svg">
+<img align="right" alt="Racemus Logo" width="64" src=".etc/logo.svg">
 
 # Racemus
 
