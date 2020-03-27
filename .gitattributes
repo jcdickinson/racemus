@@ -1,0 +1,7 @@
+# Text files
+*           text=auto
+
+# Binary files
+*.in        binary
+*.afdesign  binary
+*.png       binary
