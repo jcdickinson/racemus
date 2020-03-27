@@ -36,12 +36,12 @@ docker run -d -p 25565:25565 jcdickinson/racemus:latest
 The windows-gnu toolchain is used for debugging, this is because the CodeLLDB extension seems to do a much better job of almost all aspects of debugging Rust sources.
 
 1. You will need 64-bit g++ tools installed *and in your path:*
-  * [Strawberry Perl](http://strawberryperl.com/): circumvents the comical MSys/MinGW package management fiasco
-  * [MSys](https://www.msys2.org/): untested
+    * [Strawberry Perl](http://strawberryperl.com/): circumvents the comical MSys/MinGW package management fiasco
+    * [MSys](https://www.msys2.org/): untested
 2. In a shell in the project root:
-  1. Run `generate-key.ps1` in the project root.
-  2. Run `rustup target add x86_64-pc-windows-gnu --toolchain nightly`.
-  3. Run `cargo build --target x86_64-pc-windows-gnu` as a sanity check.
+    1. Run `generate-key.ps1` in the project root.
+    2. Run `rustup target add x86_64-pc-windows-gnu --toolchain nightly`.
+    3. Run `cargo build --target x86_64-pc-windows-gnu` as a sanity check.
 
 ## Contributing
 
