@@ -8,6 +8,8 @@
 
 Racemus is an experimental distributed [Minecraft](https://minecraft.net) server written in [Rust](https://www.rust-lang.org/). It is currently in development and nearly nothing works.
 
+Testing server (1.15.2): `racemus-ci.jcdickinson.me`
+
 ![Screenshot](.etc/screenshot.png)
 
 ## Installation: Windows
