@@ -2,6 +2,6 @@
 *           text=auto
 
 # Binary files
-*.in        -text binary
-*.afdesign  -text binary
-*.png       -text binary
+*.in        -crlf -text binary
+*.afdesign  -crlf -text binary
+*.png       -crlf -text binary
