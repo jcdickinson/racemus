@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 num = "0.2.1"
-ring = "0.16.11"
+ring = "0.16.12"
 untrusted = "0.7.0"
 
 [dependencies.async-std]
