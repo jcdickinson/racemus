@@ -1,5 +1,6 @@
 mod circular;
 mod error;
+pub mod nbt;
 pub mod proto;
 mod reader;
 mod writer;

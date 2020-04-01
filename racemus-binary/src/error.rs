@@ -33,6 +33,14 @@ impl From<ErrorKind> for Error {
     }
 }
 
+impl From<cesu8::Cesu8DecodingError> for Error {
+    fn from(value: cesu8::Cesu8DecodingError) -> Self {
+        Self {
+            kind: ErrorKind::InvalidCesu8String(value),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ErrorKind {
     PendingInsertion,
@@ -44,9 +52,11 @@ pub enum ErrorKind {
     InvalidKey,
     InvalidOperation,
     CompressedDataTooLarge,
+    InvalidNbt,
     InvalidState(i32),
     IOError(std::io::Error),
     InvalidString(Utf8Error),
+    InvalidCesu8String(cesu8::Cesu8DecodingError),
 }
 
 impl std::fmt::Display for ErrorKind {
@@ -61,9 +71,11 @@ impl std::fmt::Display for ErrorKind {
             Self::InvalidKey => write!(f, "invalid encryption key"),
             Self::InvalidOperation => write!(f, "invalid operation"),
             Self::CompressedDataTooLarge => write!(f, "compressed data too large"),
+            Self::InvalidNbt => write!(f, "invalid NBT"),
             Self::InvalidState(s) => write!(f, "invalid state: {}", s),
             Self::IOError(e) => write!(f, "I/O error: {}", e),
             Self::InvalidString(e) => write!(f, "invalid string: {}", e),
+            Self::InvalidCesu8String(e) => write!(f, "invalid CESU8 string: {}", e),
         }
     }
 }
