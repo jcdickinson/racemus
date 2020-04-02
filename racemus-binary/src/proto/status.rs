@@ -92,7 +92,7 @@ mod tests {
         }
     }
 
-    raw_write_tests!(
+    raw_write_tests! {
         binary_writer_status_pong, "test-data/status-pong-1.in", w => w.structure(&Pong{
             timestamp: 0x1526_3749_5015_2637
         })?;
@@ -101,7 +101,7 @@ mod tests {
             current_players: 21,
             description: "Welcome!"
         })?;
-    );
+    }
 
     macro_rules! raw_read_tests {
         ($($name:ident, $input:expr, $expected:expr;)*) => {
@@ -116,10 +116,10 @@ mod tests {
         }
     }
 
-    raw_read_tests!(
+    raw_read_tests! {
         binary_reader_status_info_request, "test-data/status-info-request-1.in", InfoRequest;
         binary_reader_status_ping, "test-data/status-ping-1.in", Ping {
             timestamp: 0x1526_3749_5015_2637
         };
-    );
+    }
 }

@@ -1,11 +1,12 @@
 #[macro_export]
 macro_rules! nbt_compound(
-    { $($key:expr => $value:expr),+ } => {
+    { $($key:expr => $value:expr),* } => {
         {
+            #[allow(unused_mut)]
             let mut m = ::std::collections::HashMap::new();
             $(
                 m.insert($key[..].into(), $value);
-            )+
+            )*
             $crate::nbt::Value::Compound(m)
         }
      };
@@ -13,12 +14,13 @@ macro_rules! nbt_compound(
 
 #[macro_export]
 macro_rules! nbt_list(
-    { $($value:expr),+ } => {
+    { $($value:expr),* } => {
         {
+            #[allow(unused_mut)]
             let mut m = ::std::vec::Vec::new();
             $(
                 m.push($value);
-            )+
+            )*
             $crate::nbt::Value::List(m[..].into())
         }
      };
@@ -26,12 +28,13 @@ macro_rules! nbt_list(
 
 #[macro_export]
 macro_rules! nbt_byte_array(
-    { $($value:expr),+ } => {
+    { $($value:expr),* } => {
         {
+            #[allow(unused_mut)]
             let mut m = ::std::vec::Vec::new();
             $(
                 m.push($value);
-            )+
+            )*
             $crate::nbt::Value::ByteArray(m[..].into())
         }
      };
@@ -39,12 +42,13 @@ macro_rules! nbt_byte_array(
 
 #[macro_export]
 macro_rules! nbt_int_array(
-    { $($value:expr),+ } => {
+    { $($value:expr),* } => {
         {
+            #[allow(unused_mut)]
             let mut m = ::std::vec::Vec::new();
             $(
                 m.push($value);
-            )+
+            )*
             $crate::nbt::Value::IntArray(m[..].into())
         }
      };
@@ -52,12 +56,13 @@ macro_rules! nbt_int_array(
 
 #[macro_export]
 macro_rules! nbt_long_array(
-    { $($value:expr),+ } => {
+    { $($value:expr),* } => {
         {
+            #[allow(unused_mut)]
             let mut m = ::std::vec::Vec::new();
             $(
                 m.push($value);
-            )+
+            )*
             $crate::nbt::Value::LongArray(m[..].into())
         }
      };

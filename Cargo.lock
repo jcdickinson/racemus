@@ -1087,6 +1087,7 @@ dependencies = [
  "cfb8",
  "flate2",
  "log",
+ "racemus-buffer",
  "ring",
  "serde",
  "serde_derive",
@@ -1095,6 +1096,10 @@ dependencies = [
  "surf",
  "url",
 ]
+
+[[package]]
+name = "racemus-buffer"
+version = "0.0.1"
 
 [[package]]
 name = "racemus-mc"

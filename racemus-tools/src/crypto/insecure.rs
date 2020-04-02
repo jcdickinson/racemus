@@ -1,12 +1,15 @@
-use num::bigint::{BigUint, ToBigUint};
-use num::{One, Zero};
+use num::{
+    bigint::{BigUint, ToBigUint},
+    One, Zero,
+};
 use ring::io::der;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct InsecurePrivateKey {
     n: BigUint,
     d: BigUint,
-    p: Vec<u8>,
+    p: Arc<[u8]>,
 }
 
 impl std::fmt::Debug for InsecurePrivateKey {
@@ -81,5 +84,34 @@ impl InsecurePrivateKey {
         let d = BigUint::from_bytes_be(d);
 
         Ok((n, d))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn read_der() {
+        let expected_n = BigUint::from_bytes_be(include_bytes!("test-data/server_rsa_n.in"));
+        let expected_d = BigUint::from_bytes_be(include_bytes!("test-data/server_rsa_d.in"));
+        let expected_p: Arc<[u8]> = [1, 2, 3, 4][..].into();
+        let der =
+            InsecurePrivateKey::from_der(include_bytes!("test-data/server_rsa.in"), &expected_p)
+                .unwrap();
+        assert_eq!(expected_n, der.n);
+        assert_eq!(expected_d, der.d);
+        assert_eq!(expected_p, der.p);
+    }
+
+    #[test]
+    pub fn descrypt_rsa() {
+        let der = InsecurePrivateKey::from_der(
+            include_bytes!("test-data/server_rsa.in"),
+            &[1, 2, 3, 4][..],
+        )
+        .unwrap();
+        let actual = der.decrypt(include_bytes!("test-data/decrypt_in.in"));
+        assert_eq!(&include_bytes!("test-data/decrypt_out.in")[..], &actual[..]);
     }
 }

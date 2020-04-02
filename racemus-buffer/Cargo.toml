@@ -1,0 +1,5 @@
+[package]
+name = "racemus-buffer"
+version = "0.0.1"
+authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
+edition = "2018"

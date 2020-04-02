@@ -3,6 +3,7 @@ use crate::{Error, ErrorKind};
 use async_std::io::{prelude::*, Write};
 use cfb8::stream_cipher::StreamCipher;
 use flate2::{write::ZlibEncoder, Compression};
+use racemus_buffer::Buffer;
 use std::{marker::Unpin, ops::Range};
 
 pub trait StructuredWriter<W: Write + Unpin, T> {
@@ -11,7 +12,7 @@ pub trait StructuredWriter<W: Write + Unpin, T> {
 
 pub struct BinaryWriter<W: Write + Unpin> {
     order: Vec<Option<Range<usize>>>,
-    buffer: Vec<u8>,
+    buffer: Buffer,
     writer: W,
     cipher: Option<AesCfb8>,
     compression_buffer: Option<Vec<u8>>,
@@ -97,7 +98,7 @@ impl<W: Write + Unpin> BinaryWriter<W> {
     pub fn new(writer: W) -> Self {
         Self {
             order: Vec::new(),
-            buffer: Vec::new(),
+            buffer: Buffer::with_capacity(crate::BUFFER_GROW, crate::BUFFER_INIT),
             writer,
             cipher: None,
             compression_buffer: None,
@@ -117,9 +118,9 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             return Ok(self);
         }
 
-        let start = self.buffer.len();
-        self.buffer.extend_from_slice(data);
-        let end = self.buffer.len();
+        let start = self.buffer.available_data();
+        self.buffer.ensure_space(data.len());
+        let end = self.buffer.append(data).unwrap();
 
         if let Some(order) = self.order.last_mut() {
             if let Some(order) = order {
@@ -146,9 +147,9 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             return Ok(self);
         }
 
-        let start = self.buffer.len();
-        self.buffer.extend_from_slice(data);
-        let end = self.buffer.len();
+        let start = self.buffer.available_data();
+        self.buffer.ensure_space(data.len());
+        let end = self.buffer.append(data).unwrap();
 
         self.order[insertion.index] = Some(start..end);
 
@@ -158,14 +159,14 @@ impl<W: Write + Unpin> BinaryWriter<W> {
     #[inline]
     pub(crate) fn create_insertion(&mut self) -> BinaryWriterInsertion {
         let index = self.order.len();
-        let start = self.buffer.len();
+        let start = self.buffer.available_data();
         self.order.push(None);
         BinaryWriterInsertion { start, index }
     }
 
     #[inline]
     pub(crate) fn bytes_after_insertion(&mut self, insertion: &BinaryWriterInsertion) -> usize {
-        let current = self.buffer.len();
+        let current = self.buffer.available_data();
         current - insertion.start
     }
 
@@ -174,7 +175,7 @@ impl<W: Write + Unpin> BinaryWriter<W> {
         if let Some(cipher) = self.cipher.as_mut() {
             for order in &self.order {
                 if let Some(range) = order {
-                    cipher.encrypt(&mut self.buffer[range.clone()]);
+                    cipher.encrypt(&mut self.buffer.data_mut()[range.clone()]);
                 } else {
                     return Err(ErrorKind::PendingInsertion.into());
                 }
@@ -183,7 +184,11 @@ impl<W: Write + Unpin> BinaryWriter<W> {
 
         for order in &self.order {
             if let Some(range) = order {
-                match self.writer.write_all(&mut self.buffer[range.clone()]).await {
+                match self
+                    .writer
+                    .write_all(&self.buffer.data()[range.clone()])
+                    .await
+                {
                     Ok(_) => (),
                     Err(e) => return Err(e.into()),
                 }
@@ -274,7 +279,7 @@ impl<W: Write + Unpin> BinaryWriter<W> {
         };
 
         let mut zlib = ZlibEncoder::new(buffer, Compression::fast());
-        zlib.write_all(&self.buffer[data_range.clone()])?;
+        zlib.write_all(&self.buffer.data()[data_range.clone()])?;
         let mut buffer = zlib.finish()?;
 
         let result = if buffer.len() > data_range.len() {
@@ -282,10 +287,9 @@ impl<W: Write + Unpin> BinaryWriter<W> {
             buffer.truncate(0);
             Ok(None)
         } else {
-            self.buffer.truncate(self.buffer.len() - data_range.len());
-            self.buffer.append(&mut buffer);
+            self.buffer.replace_slice(data_range.clone(), &buffer);
 
-            let data_range = data_range.start..self.buffer.len();
+            let data_range = data_range.start..self.buffer.available_data();
             self.order.truncate(self.order.len() - order_range.len());
             self.order.push(Some(data_range.clone()));
             Ok(Some(data_range.len()))
@@ -373,7 +377,7 @@ mod tests {
         }
         writer.raw_buffer(expected.as_bytes())?;
 
-        writer.allow_compression(writer.buffer.len() + 1);
+        writer.allow_compression(writer.buffer.available_data() + 1);
         match writer.try_compress(&pre)? {
             Some(_) => panic!("threshold not exceeded"),
             None => {}
@@ -381,7 +385,7 @@ mod tests {
 
         // The location of the data here is based on how length prefixes work at the time of writing the test. If that
         // changes, then so must the test.
-        let buf = std::mem::take(&mut writer.buffer);
+        let buf = &writer.buffer.data();
         let order = writer.order[1].clone().unwrap();
         let mut reader = &buf[order];
         let mut actual = String::new();
@@ -408,7 +412,7 @@ mod tests {
 
         // The location of the data here is based on how length prefixes work at the time of writing the test. If that
         // changes, then so must the test.
-        let buf = std::mem::take(&mut writer.buffer);
+        let buf = &writer.buffer.data();
         let order = writer.order[1].clone().unwrap();
         let mut reader = &buf[order];
         let mut actual = String::new();
@@ -443,7 +447,7 @@ mod tests {
 
         // The location of the data here is based on how insertion points work at the time of writing the test. If that
         // changes, then so must the test.
-        let buf = std::mem::take(&mut writer.buffer);
+        let buf = &writer.buffer.data();
         let order = writer.order[1].clone().unwrap();
         let mut zlib = ZlibDecoder::new(&buf[order]);
         let mut actual = String::new();
@@ -469,7 +473,7 @@ mod tests {
         }
     }
 
-    raw_write_tests!(
+    raw_write_tests! {
         binary_writer_fix_bool_true, "test-data/fix-bool-1.in", w => w
             .fix_bool(false)?
             .fix_bool(true)?;
@@ -541,5 +545,5 @@ mod tests {
             .var_u64(0x0000_0000_0000_00ff)?
             .var_u64(0x7fff_ffff_ffff_ffff)?
             .var_u64(0xffff_ffff_ffff_ffff)?;
-    );
+    }
 }

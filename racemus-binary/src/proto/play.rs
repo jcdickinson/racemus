@@ -194,7 +194,7 @@ mod tests {
         }
     }
 
-    raw_write_tests!(
+    raw_write_tests! {
         binary_writer_play_join_game, "test-data/play-join-game-1.in", w => w.structure(&JoinGame{
             entity_id: 0x1526_3749,
             game_mode: GameMode::Hardcore(GameModeKind::Adventure),
@@ -219,5 +219,5 @@ mod tests {
         binary_writer_play_disconnect, "test-data/play-disconnect-1.in", w => w.structure(&Disconnect{
             reason: "kicked"
         })?;
-    );
+    }
 }

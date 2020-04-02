@@ -110,7 +110,7 @@ mod tests {
         }
     }
 
-    raw_write_tests!(
+    raw_write_tests! {
         binary_writer_login_encryption_request, "test-data/login-encryption-request-1.in", w => w.structure(&EncryptionRequest{
             public_key: b"1234",
             verify_token: b"5678",
@@ -122,7 +122,7 @@ mod tests {
         binary_writer_login_disconnect, "test-data/login-disconnect-1.in", w => w.structure(&Disconnect{
             reason: "bad player"
         })?;
-    );
+    }
 
     macro_rules! raw_read_tests {
         ($($name:ident, $input:expr, $expected:expr;)*) => {
@@ -137,7 +137,7 @@ mod tests {
         }
     }
 
-    raw_read_tests!(
+    raw_read_tests! {
         binary_reader_login_start, "test-data/login-start-1.in", Start {
             player_name: "test".into()
         };
@@ -145,5 +145,5 @@ mod tests {
             encrypted_shared_secret: (b"1234" as &[u8]).into(),
             encrypted_verifier: (b"56789" as &[u8]).into()
         };
-    );
+    }
 }

@@ -137,12 +137,12 @@ mod tests {
         }
     }
 
-    raw_write_tests!(
+    raw_write_tests! {
         binary_writer_arr_char, "test-data/arr-char-1.in", w => w
             .arr_char("this is a string test 🎉✨")?
             .arr_char("this is a string test1 🎉✨")?;
         binary_writer_arr_u8, "test-data/arr-u8-1.in", w => w
             .arr_u8(b"12345")?
             .arr_u8(b"567890")?;
-    );
+    }
 }

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "racemus-buffer",
     "racemus-mc",
     "racemus-binary",
     "racemus-tools",

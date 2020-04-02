@@ -93,9 +93,9 @@ mod tests {
         }
     }
 
-    raw_write_tests!(
+    raw_write_tests! {
         binary_writer_open_http_ok, "test-data/open-http-ok-1.in", w => w.structure(&HttpOK{})?;
-    );
+    }
 
     macro_rules! raw_read_tests {
         ($($name:ident, $input:expr, $expected:expr;)*) => {
@@ -110,7 +110,7 @@ mod tests {
         }
     }
 
-    raw_read_tests!(
+    raw_read_tests! {
         binary_reader_open_handshake, "test-data/open-handshake-1.in", Handshake {
             version: 21,
             address: "localhost".into(),
@@ -118,5 +118,5 @@ mod tests {
             next_state: RequestedState::Status,
         };
         binary_reader_open_http_get, "test-data/open-http-get-1.in", HttpGet {};
-    );
+    }
 }

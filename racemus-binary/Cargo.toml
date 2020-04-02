@@ -5,6 +5,8 @@ authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
 edition = "2018"
 
 [dependencies]
+racemus-buffer = { path = "../racemus-buffer" }
+
 log = "0.4.8"
 ring = "0.16.12"
 aes = "0.3.2"

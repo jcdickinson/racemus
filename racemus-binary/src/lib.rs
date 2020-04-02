@@ -1,4 +1,3 @@
-mod circular;
 mod error;
 pub mod nbt;
 pub mod proto;
@@ -17,6 +16,17 @@ pub const SERVER_VERSION: &str = "1.15.2";
 pub const SERVER_VERSION_NUMBER: i32 = 578;
 
 type AesCfb8 = Cfb8<Aes128>;
+
+#[cfg(not(test))]
+pub(crate) const BUFFER_INIT: usize = 1024;
+#[cfg(not(test))]
+pub(crate) const BUFFER_GROW: usize = 4096;
+// Small values are intentionally used in tests to ensure that
+// streaming is working
+#[cfg(test)]
+pub(crate) const BUFFER_INIT: usize = 1;
+#[cfg(test)]
+pub(crate) const BUFFER_GROW: usize = 2;
 
 pub fn create_aes_cfb8(key: &[u8], iv: &[u8]) -> Result<AesCfb8, Error> {
     match AesCfb8::new_var(key, iv) {

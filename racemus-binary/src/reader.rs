@@ -1,13 +1,13 @@
-use crate::circular::Buffer;
 use crate::{AesCfb8, Error, ErrorKind};
 use async_std::io::{prelude::*, Read};
 use cfb8::stream_cipher::StreamCipher;
 use flate2::read::ZlibDecoder;
+use racemus_buffer::Buffer;
 use std::{convert::TryInto, marker::Unpin};
 
 pub struct BinaryReader<R: Read + Unpin> {
     buffer: Buffer,
-    decompression_buffer: Vec<u8>,
+    decompression_buffer: Buffer,
     current_len: Option<usize>,
     reader: R,
     cipher: Option<AesCfb8>,
@@ -51,20 +51,10 @@ macro_rules! build_read_fixnum {
 }
 
 impl<R: Read + Unpin> BinaryReader<R> {
-    #[cfg(not(test))]
-    const BUFFER_INIT: usize = 1024;
-    #[cfg(not(test))]
-    const BUFFER_GROW: usize = 4096;
-    // Small values are intentionally used in tests to ensure that
-    // streaming is working
-    #[cfg(test)]
-    const BUFFER_INIT: usize = 1;
-    #[cfg(test)]
-    const BUFFER_GROW: usize = 2;
     pub fn new(reader: R) -> Self {
         Self {
-            buffer: Buffer::with_capacity(Self::BUFFER_INIT),
-            decompression_buffer: Vec::new(),
+            buffer: Buffer::with_capacity(crate::BUFFER_GROW, crate::BUFFER_INIT),
+            decompression_buffer: Buffer::with_capacity(crate::BUFFER_GROW, crate::BUFFER_INIT),
             allow_compression: false,
             current_len: None,
             reader,
@@ -96,7 +86,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
         if let Some(current_len) = self.current_len.as_mut() {
             *current_len -= count;
         }
-        self.buffer.consume_noshift(count);
+        self.buffer.consume(count);
     }
 
     #[inline]
@@ -134,14 +124,13 @@ impl<R: Read + Unpin> BinaryReader<R> {
         let data_range = 0..compressed;
         let mut zlib = ZlibDecoder::new(&self.buffer.data()[data_range.clone()]);
 
-        self.decompression_buffer.resize(decompressed, 0);
-        let mut offset = 0;
-        while offset < self.decompression_buffer.len() {
-            let count = zlib.read(&mut self.decompression_buffer[0..])?;
+        self.decompression_buffer.ensure_space(decompressed);
+        while self.decompression_buffer.available_data() < decompressed {
+            let count = zlib.read(&mut self.decompression_buffer.space())?;
             if count == 0 {
                 return Err(ErrorKind::EndOfData.into());
             }
-            offset += count;
+            self.decompression_buffer.fill(count);
         }
 
         if zlib.total_in() as usize != data_range.len() {
@@ -149,31 +138,18 @@ impl<R: Read + Unpin> BinaryReader<R> {
         }
 
         let required_size = (self.buffer.available_data() - data_range.len()) + decompressed;
-        self.grow(required_size);
+        self.buffer.ensure_space(required_size);
         self.buffer
-            .replace_slice(data_range, &self.decompression_buffer)
+            .replace_slice(data_range, &self.decompression_buffer.data())
             .unwrap();
+        self.decompression_buffer
+            .consume(self.decompression_buffer.available_data());
 
         Ok(())
     }
 
-    #[inline]
-    fn grow(&mut self, count: usize) {
-        if count > self.buffer.available_space() {
-            self.buffer.shift();
-            if count > self.buffer.available_space() {
-                let grow = count;
-                // Size it to BUFFER_GROW increments
-                let grow = (grow + Self::BUFFER_GROW - 1) / Self::BUFFER_GROW;
-                let grow = grow * Self::BUFFER_GROW;
-
-                self.buffer.grow(grow);
-            }
-        }
-    }
-
     async fn fill(&mut self, count: usize) -> Result<(), Error> {
-        self.grow(count);
+        self.buffer.ensure_space(count);
         while self.buffer.available_data() < count {
             let n = match self.reader.read(&mut self.buffer.space()).await {
                 Ok(r) => r,
@@ -197,6 +173,7 @@ impl<R: Read + Unpin> BinaryReader<R> {
                 let remove = std::cmp::min(*current_len, self.buffer.available_data());
                 *current_len -= remove;
                 self.buffer.consume(remove);
+                self.buffer.shift();
                 while *current_len != 0 {
                     // We are not decrypting, so don't overfill.
                     let remove = std::cmp::min(*current_len, self.buffer.available_space());
@@ -348,7 +325,7 @@ mod tests {
         }
     }
 
-    raw_read_tests!(
+    raw_read_tests! {
         binary_reader_fix_unsigned, "test-data/fix-unsigned-1.in", r => {
             r.fix_u8(), 0x15;
             r.fix_u16(), 0x1526;
@@ -422,5 +399,5 @@ mod tests {
             r.var_u64(), 0x7fff_ffff_ffff_ffff;
             r.var_u64(), 0xffff_ffff_ffff_ffff;
         };
-    );
+    }
 }

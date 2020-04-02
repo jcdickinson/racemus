@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     pub fn binary_reader_packet_header_compressed() -> Result<(), Error> {
-        let mut reader = make_reader(include_bytes!("./test-data/packet-compressed.in") as &[u8]);
+        let mut reader = make_reader(include_bytes!("test-data/packet-compressed.in") as &[u8]);
         reader.allow_compression();
 
         let mut expected = "".to_string();
@@ -165,7 +165,7 @@ mod tests {
         }
     }
 
-    raw_read_tests!(
+    raw_read_tests! {
         binary_reader_arr_char, "test-data/arr-char-1.in", r => {
             r.arr_char(None), "this is a string test 🎉✨".into();
             r.arr_char(None), "this is a string test1 🎉✨".into();
@@ -174,5 +174,5 @@ mod tests {
             r.arr_u8(None), (b"12345" as &[u8]).into();
             r.arr_u8(None), (b"567890" as &[u8]).into();
         };
-    );
+    }
 }
