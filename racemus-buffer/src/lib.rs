@@ -3,7 +3,7 @@
 #![feature(alloc_layout_extra)]
 
 use std::{
-    alloc::{handle_alloc_error, AllocRef, Global, Layout},
+    alloc::{handle_alloc_error, AllocRef, Global, Layout, AllocInit, ReallocPlacement},
     cmp,
     convert::TryInto,
     io::{self, Write},
@@ -38,31 +38,40 @@ impl<A: AllocRef> RawBuf<A> {
             return false;
         }
 
+        fn capacity_overflow() -> ! {
+            panic!("capacity overflow");
+        }
+
         // Size it to `increment` increments
         let new_capacity = (desired + self.increment - 1) / self.increment;
         let new_capacity = new_capacity * self.increment;
-        unsafe {
-            let new_layout = Layout::array::<u8>(new_capacity).unwrap();
-            let ptr = if self.capacity == 0 {
-                self.a.alloc(new_layout)
-            } else {
-                let c: NonNull<u8> = self.ptr.into();
-                self.a.realloc(
-                    c.cast(),
-                    Layout::array::<u8>(self.capacity).unwrap(),
-                    new_layout.size(),
-                )
-            };
+        
+        let new_layout = Layout::array::<u8>(new_capacity).unwrap_or_else(|_| capacity_overflow());
+        if mem::size_of::<usize>() < 8 && new_layout.size() > isize::MAX as usize {
+            capacity_overflow()
+        }
 
-            if let Ok(ptr) = ptr {
-                self.ptr = Unique::new_unchecked(ptr.0.as_ptr() as *mut _);
-                self.capacity = new_capacity;
-            } else {
-                handle_alloc_error(Layout::from_size_align_unchecked(
-                    new_capacity * ELEM_SIZE,
-                    ALIGN,
-                ));
+        let ptr = if self.capacity == 0 {
+            self.a.alloc(new_layout, AllocInit::Uninitialized)
+        } else {
+            let c: NonNull<u8> = self.ptr.into();
+            unsafe {
+                let old_layout = Layout::from_size_align_unchecked(ELEM_SIZE * self.capacity, ALIGN);
+                self.a.grow(
+                    c,
+                    old_layout,
+                    new_layout.size(),
+                    ReallocPlacement::MayMove,
+                    AllocInit::Uninitialized
+                )
             }
+        };
+
+        if let Ok(memory) = ptr {
+            self.ptr = memory.ptr.cast().into();
+            self.capacity = memory.size;
+        } else {
+            handle_alloc_error(new_layout);
         }
 
         true
