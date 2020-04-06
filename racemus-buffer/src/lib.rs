@@ -3,7 +3,7 @@
 #![feature(alloc_layout_extra)]
 
 use std::{
-    alloc::{handle_alloc_error, AllocRef, Global, Layout, AllocInit, ReallocPlacement},
+    alloc::{handle_alloc_error, AllocInit, AllocRef, Global, Layout, ReallocPlacement},
     cmp,
     convert::TryInto,
     io::{self, Write},
@@ -45,7 +45,7 @@ impl<A: AllocRef> RawBuf<A> {
         // Size it to `increment` increments
         let new_capacity = (desired + self.increment - 1) / self.increment;
         let new_capacity = new_capacity * self.increment;
-        
+
         let new_layout = Layout::array::<u8>(new_capacity).unwrap_or_else(|_| capacity_overflow());
         if mem::size_of::<usize>() < 8 && new_layout.size() > isize::MAX as usize {
             capacity_overflow()
@@ -56,13 +56,14 @@ impl<A: AllocRef> RawBuf<A> {
         } else {
             let c: NonNull<u8> = self.ptr.into();
             unsafe {
-                let old_layout = Layout::from_size_align_unchecked(ELEM_SIZE * self.capacity, ALIGN);
+                let old_layout =
+                    Layout::from_size_align_unchecked(ELEM_SIZE * self.capacity, ALIGN);
                 self.a.grow(
                     c,
                     old_layout,
                     new_layout.size(),
                     ReallocPlacement::MayMove,
-                    AllocInit::Uninitialized
+                    AllocInit::Uninitialized,
                 )
             }
         };
