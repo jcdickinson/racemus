@@ -3,7 +3,7 @@
 #![feature(alloc_layout_extra)]
 
 use std::{
-    alloc::{handle_alloc_error, AllocInit, AllocRef, Global, Layout, ReallocPlacement},
+    alloc::{AllocInit, AllocRef, Global, Layout, ReallocPlacement},
     cmp,
     convert::TryInto,
     io::{self, Write},
@@ -23,6 +23,18 @@ struct RawBuf<A: AllocRef = Global> {
 const ELEM_SIZE: usize = mem::size_of::<u8>();
 const ALIGN: usize = mem::align_of::<u8>();
 
+#[inline]
+fn capacity_overflow() -> ! {
+    panic!("capacity overflow");
+}
+
+#[inline]
+fn check_size(size: usize) {
+    if mem::size_of::<usize>() < 8 && size > isize::MAX as usize {
+        capacity_overflow()
+    }
+}
+
 impl<A: AllocRef> RawBuf<A> {
     fn new(a: A, increment: usize) -> Self {
         Self {
@@ -38,18 +50,12 @@ impl<A: AllocRef> RawBuf<A> {
             return false;
         }
 
-        fn capacity_overflow() -> ! {
-            panic!("capacity overflow");
-        }
-
         // Size it to `increment` increments
         let new_capacity = (desired + self.increment - 1) / self.increment;
         let new_capacity = new_capacity * self.increment;
 
         let new_layout = Layout::array::<u8>(new_capacity).unwrap_or_else(|_| capacity_overflow());
-        if mem::size_of::<usize>() < 8 && new_layout.size() > isize::MAX as usize {
-            capacity_overflow()
-        }
+        check_size(new_layout.size());
 
         let ptr = if self.capacity == 0 {
             self.a.alloc(new_layout, AllocInit::Uninitialized)
@@ -72,14 +78,16 @@ impl<A: AllocRef> RawBuf<A> {
             self.ptr = memory.ptr.cast().into();
             self.capacity = memory.size;
         } else {
-            handle_alloc_error(new_layout);
+            capacity_overflow();
         }
 
         true
     }
 
     fn set(&mut self, index: usize, data: &[u8]) {
-        assert!(index + data.len() <= self.capacity);
+        let end = index.checked_add(data.len()).unwrap_or_else(||capacity_overflow());
+        check_size(end);
+        assert!(end <= self.capacity);
         let index = index.try_into().unwrap();
         let len = data.len();
         unsafe {
@@ -88,20 +96,23 @@ impl<A: AllocRef> RawBuf<A> {
     }
 
     fn shift(&mut self, range: Range<usize>) {
-        let len = range.len();
-        assert!(len <= self.capacity);
+        check_size(range.end);
+        assert!(range.end <= self.capacity);
         let start = range.start.try_into().unwrap();
 
         unsafe {
-            ptr::copy(self.ptr.as_ptr().offset(start), self.ptr.as_ptr(), len);
+            ptr::copy(self.ptr.as_ptr().offset(start), self.ptr.as_ptr(), range.len());
         }
     }
 
     fn remove_insert(&mut self, remove: Range<usize>, insert: usize, valid: usize) {
+        check_size(valid);
         assert!(valid <= self.capacity);
         assert!(remove.end <= valid);
 
         if insert > remove.len() {
+            let end = remove.start + insert - remove.len();
+            check_size(end);
             assert!(remove.start + insert - remove.len() <= self.capacity);
         }
 
