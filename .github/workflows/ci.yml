@@ -93,7 +93,7 @@ jobs:
 
       - name: Gather Coverage Data
         id: coverage
-        uses: jcdickinson/action-grcov@master
+        uses: jcdickinson/action-grcov@v0.1.7
         with:
           coveralls-token: ${{ secrets.COVERALLS_TOKEN }}
 
