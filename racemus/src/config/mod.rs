@@ -222,7 +222,7 @@ impl TryFrom<RawConfig> for Config {
 #[derive(Debug, Clone)]
 pub struct NetworkConfig {
     addr: std::net::SocketAddr,
-    motd: Arc<Box<str>>,
+    motd: Arc<str>,
     compression_threshold: Option<u16>,
 }
 
@@ -230,7 +230,7 @@ impl NetworkConfig {
     pub fn addr(&self) -> &std::net::SocketAddr {
         &self.addr
     }
-    pub fn motd(&self) -> &Arc<Box<str>> {
+    pub fn motd(&self) -> &Arc<str> {
         &self.motd
     }
     pub fn compression_threshold(&self) -> Option<u16> {
@@ -247,7 +247,7 @@ impl TryFrom<RawNetworkConfig> for NetworkConfig {
             Err(e) => return Err(e.into()),
         };
         let addr = std::net::SocketAddr::new(addr, value.port);
-        let motd = Arc::new(value.motd.into());
+        let motd = value.motd.into();
         let compression_threshold = match value.compression_threshold.try_into() {
             Ok(r) => Some(r),
             _ => None,
@@ -262,16 +262,16 @@ impl TryFrom<RawNetworkConfig> for NetworkConfig {
 
 #[derive(Debug, Clone)]
 pub struct SecurityConfig {
-    private_key: Arc<Box<str>>,
-    public_key: Arc<Box<str>>,
+    private_key: Arc<str>,
+    public_key: Arc<str>,
 }
 
 impl TryFrom<RawSecurityConfig> for SecurityConfig {
     type Error = Box<dyn Error>;
 
     fn try_from(value: RawSecurityConfig) -> Result<Self, Self::Error> {
-        let private_key = Arc::new(value.private_key.into());
-        let public_key = Arc::new(value.public_key.into());
+        let private_key = value.private_key.into();
+        let public_key = value.public_key.into();
         Ok(Self {
             private_key,
             public_key,
@@ -280,10 +280,10 @@ impl TryFrom<RawSecurityConfig> for SecurityConfig {
 }
 
 impl SecurityConfig {
-    pub fn private_key(&self) -> &Arc<Box<str>> {
+    pub fn private_key(&self) -> &Arc<str> {
         &self.private_key
     }
-    pub fn public_key(&self) -> &Arc<Box<str>> {
+    pub fn public_key(&self) -> &Arc<str> {
         &self.public_key
     }
 }

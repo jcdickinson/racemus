@@ -78,7 +78,7 @@ impl Controller {
                 game_mode: player.game_mode,
                 dimension: player.dimension,
                 hashed_seed: self.controllers.config().game().seed(),
-                level_type: Arc::new("default".into()),
+                level_type: "default".into(),
                 view_distance: self.controllers.config().game().view_distance(),
                 reduce_debug: self.controllers.config().game().reduce_debug_info(),
                 enable_respawn_screen: self.controllers.config().game().enable_respawn_screen(),

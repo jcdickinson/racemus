@@ -10,7 +10,7 @@ pub enum ClientMessage {
         game_mode: crate::models::GameMode,
         dimension: i32,
         hashed_seed: u64,
-        level_type: Arc<Box<str>>,
+        level_type: Arc<str>,
         view_distance: u8,
         reduce_debug: bool,
         enable_respawn_screen: bool,
