@@ -7,3 +7,7 @@ source-dir: .
 ignore:
   - "../*"
   - "/usr/share/rust/*"
+excl-br-line: "#\\[derive\\("
+excl-line: "#\\[derive\\("
+excl-br-start: "mod tests \\{"
+excl-line-start: "mod tests \\{"
