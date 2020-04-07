@@ -3,6 +3,10 @@ use ring::digest;
 use serde_derive::Deserialize;
 use std::error::Error;
 
+use async_std::io::prelude::*;
+use async_std::net::TcpStream;
+use http_types::{Method, Request, Url};
+
 fn to_hex(v: u8) -> char {
     match v {
         0x0 => '0',
@@ -105,23 +109,30 @@ pub async fn has_joined(
     public_key_der: &[u8],
 ) -> Result<crate::api::PlayerInfo, Box<dyn Error + Send + Sync + 'static>> {
     let server_hash = calculate_server_hash(server_id, shared_secret, public_key_der);
+    let mut url = Url::parse(HAS_JOINED).unwrap();
 
-    let mut url = url::Url::parse(HAS_JOINED).unwrap();
+    let mut host = url.host_str().unwrap().to_string();
+    host.push_str(":443");
+    let stream = TcpStream::connect(&host).await?;
+
     url.query_pairs_mut()
         .append_pair("username", &player_name)
         .append_pair("serverId", &server_hash);
-    let url = url.to_string();
-
     trace!("sending login request: {}", url);
-    let mut resp = surf::get(url).await?;
 
-    let status = resp.status().as_u16();
-    if status != 200 {
-        return Err(Box::new(crate::api::ApiError::HttpStatus(status)));
+    let req = Request::new(Method::Get, url);
+    let stream = async_native_tls::connect(req.url().host_str().unwrap(), stream).await?;
+    let mut resp = async_h1::connect(stream, req).await?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(Box::new(crate::api::ApiError::HttpStatus(status.into())));
     }
 
-    let resp = resp.body_bytes().await?;
-    let resp: HasJoinedResponse = serde_json::from_slice(&resp)?;
+    let mut resp = resp.take_body().into_reader();
+    let mut buffer = Vec::new();
+    resp.read_to_end(&mut buffer).await?;
+    let resp: HasJoinedResponse = serde_json::from_reader(std::io::Cursor::new(buffer))?;
 
     Ok(resp.into())
 }
