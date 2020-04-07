@@ -2,10 +2,12 @@ mod error;
 pub mod nbt;
 pub mod proto;
 mod reader;
+mod var_vec;
 mod writer;
 
 pub use error::*;
 pub use reader::*;
+pub use var_vec::*;
 pub use writer::*;
 
 use aes::Aes128;

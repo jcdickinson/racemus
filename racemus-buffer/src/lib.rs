@@ -85,7 +85,9 @@ impl<A: AllocRef> RawBuf<A> {
     }
 
     fn set(&mut self, index: usize, data: &[u8]) {
-        let end = index.checked_add(data.len()).unwrap_or_else(||capacity_overflow());
+        let end = index
+            .checked_add(data.len())
+            .unwrap_or_else(|| capacity_overflow());
         check_size(end);
         assert!(end <= self.capacity);
         let index = index.try_into().unwrap();
@@ -101,7 +103,11 @@ impl<A: AllocRef> RawBuf<A> {
         let start = range.start.try_into().unwrap();
 
         unsafe {
-            ptr::copy(self.ptr.as_ptr().offset(start), self.ptr.as_ptr(), range.len());
+            ptr::copy(
+                self.ptr.as_ptr().offset(start),
+                self.ptr.as_ptr(),
+                range.len(),
+            );
         }
     }
 
