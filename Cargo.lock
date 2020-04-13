@@ -74,9 +74,9 @@ dependencies = [
 
 [[package]]
 name = "async-h1"
-version = "1.0.2"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e5ab8d40149b94ac5d12a751a9d50d2a9f05526d176897a5bf23438862bdaab"
+checksum = "54231eb259eab9b203375a5461b3a1ddc43d8e58a0ebe9af71151031a27d8033"
 dependencies = [
  "async-std",
  "byte-pool",
