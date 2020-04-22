@@ -500,9 +500,9 @@ dependencies = [
 
 [[package]]
 name = "http-types"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbffbd55791a5fa648f2d6e6fd6c5bf2467ef3fafc70916af8ca7a91fc511c6c"
+checksum = "05af75a78dfeb163d472b1d27bebb6a8845917a069accdf53a9bed47aaff9bfc"
 dependencies = [
  "anyhow",
  "async-std",
