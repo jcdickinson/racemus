@@ -8,7 +8,7 @@ edition = "2018"
 racemus-buffer = { path = "../racemus-buffer" }
 
 log = "0.4.8"
-ring = "0.16.12"
+ring = "0.16.13"
 aes = "0.3.2"
 cfb8 = "0.3.2"
 stream-cipher = "0.3.2"

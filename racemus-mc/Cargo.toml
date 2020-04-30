@@ -5,7 +5,7 @@ authors = ["Jonathan Dickinson <oss@jcdickinson.me>"]
 edition = "2018"
 
 [dependencies]
-ring = "0.16.12"
+ring = "0.16.13"
 log = "0.4.8"
 async-native-tls = "0.3.3"
 url = "2.1"

@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 num = "0.2.1"
-ring = "0.16.12"
+ring = "0.16.13"
 untrusted = "0.7.0"
 async-std = { version = "1.5", features = ["unstable"] }
