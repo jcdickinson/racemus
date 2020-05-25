@@ -8,4 +8,4 @@ edition = "2018"
 num = "0.2.1"
 ring = "0.16.12"
 untrusted = "0.7.0"
-async-std = { version = "1.5", features = ["unstable"] }
+async-std = { version = "1.6", features = ["unstable"] }
